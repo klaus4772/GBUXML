@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified">
+    <xs:element name="GBUXML">
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="GeneralData" type="GeneralDataType"/>
+                <xs:element name="Trades" type="TradesType"/>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+
+    <xs:complexType name="GeneralDataType">
+        <xs:sequence>
+            <xs:element name="Firmenname" type="xs:string"/>
+            <xs:element name="StrasseHausnummer" type="xs:string"/>
+            <xs:element name="PLZ" type="xs:string"/>
+            <xs:element name="Ort" type="xs:string"/>
+            <xs:element name="ErstellerGefaehrdungsbeurteilung" type="xs:string"/>
+            <xs:element name="DatumDerErstellung" type="xs:date"/>
+            <xs:element name="Gueltigkeitsbereich" type="xs:string" minOccurs="0"/>
+            <xs:element name="SiFa" type="xs:string" minOccurs="0"/>
+            <xs:element name="Betriebsarzt" type="xs:string" minOccurs="0"/>
+        </xs:sequence>
+    </xs:complexType>
+
+    <xs:complexType name="TradesType">
+        <xs:sequence>
+            <xs:element name="Trade" type="TradeType" minOccurs="0" maxOccurs="unbounded"/>
+        </xs:sequence>
+    </xs:complexType>
+
+    <xs:complexType name="TradeType">
+        <xs:sequence>
+            <xs:element name="TradeNo" type="xs:int"/>
+            <xs:element name="TradeName" type="xs:string"/>
+            <xs:element name="Areas" type="AreasType"/>
+        </xs:sequence>
+    </xs:complexType>
+
+    <xs:complexType name="AreasType">
+        <xs:sequence>
+            <xs:element name="Area" type="AreaType" minOccurs="0" maxOccurs="unbounded"/>
+        </xs:sequence>
+    </xs:complexType>
+
+    <xs:complexType name="AreaType">
+        <xs:sequence>
+            <xs:element name="AreaNo" type="xs:int"/>
+            <xs:element name="AreaName" type="xs:string"/>
+            <xs:element name="Annotation" type="xs:string" minOccurs="0"/>
+            <xs:element name="Processes" type="ProcessesType"/>
+        </xs:sequence>
+    </xs:complexType>
+
+    <xs:complexType name="ProcessesType">
+        <xs:sequence>
+            <xs:element name="Process" type="ProcessType" minOccurs="0" maxOccurs="unbounded"/>
+        </xs:sequence>
+    </xs:complexType>
+
+    <xs:complexType name="ProcessType">
+        <xs:sequence>
+            <xs:element name="ProcessId" type="xs:int"/>
+            <xs:element name="ProcessName" type="xs:string"/>
+            <xs:element name="Annotation" type="xs:string" minOccurs="0"/>
+            <xs:element name="Hazards" type="HazardsType"/>
+        </xs:sequence>
+    </xs:complexType>
+
+    <xs:complexType name="HazardsType">
+        <xs:sequence>
+            <xs:element name="Hazard" type="HazardType" minOccurs="0" maxOccurs="unbounded"/>
+        </xs:sequence>
+    </xs:complexType>
+
+    <xs:complexType name="HazardType">
+        <xs:sequence>
+            <xs:element name="HazardNumber" type="xs:int"/>
+            <xs:element name="HazardName" type="xs:string"/>
+            <xs:element name="Risk" type="xs:string"/>
+            <xs:element name="Measures" type="MeasuresType"/>
+        </xs:sequence>
+    </xs:complexType>
+
+    <xs:complexType name="MeasuresType">
+        <xs:sequence>
+            <xs:element name="Measure" type="MeasureType" minOccurs="0" maxOccurs="unbounded"/>
+        </xs:sequence>
+    </xs:complexType>
+
+    <xs:complexType name="MeasureType">
+        <xs:sequence>
+            <xs:element name="MeasureText" type="xs:string"/>
+            <xs:element name="ActionNeeded" type="xs:boolean"/>
+            <xs:element name="DueDate" type="xs:date" minOccurs="0"/>
+            <xs:element name="Responsible" type="xs:string" minOccurs="0"/>
+            <xs:element name="ActualDate" type="xs:date" minOccurs="0"/>
+            <xs:element name="Confirmation" type="xs:string" minOccurs="0"/>
+        </xs:sequence>
+    </xs:complexType>
+</xs:schema>

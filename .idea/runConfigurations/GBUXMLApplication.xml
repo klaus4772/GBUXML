@@ -1,0 +1,12 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="GBUXMLApplication" type="MavenRunConfiguration" factoryName="Maven">
+    <option name="goalName" value="javafx:run" />
+    <option name="pomFileName" value="pom.xml" />
+    <option name="workingDir" value="$PROJECT_DIR$" />
+    <option name="parameters" value="" />
+    <option name="profiles" value="" />
+    <option name="selectedOptions" value="NONE" />
+    <option name="consoleMode" value="INLINE" />
+    <method v="2" />
+  </configuration>
+</component>

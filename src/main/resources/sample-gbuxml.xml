@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<GBUXML>
+    <GeneralData>
+        <Firmenname>Gerüstbau GmbH</Firmenname>
+        <StrasseHausnummer>Hauptstraße 10</StrasseHausnummer>
+        <PLZ>12345</PLZ>
+        <Ort>Berlin</Ort>
+        <ErstellerGefaehrdungsbeurteilung>Max Mustermann</ErstellerGefaehrdungsbeurteilung>
+        <DatumDerErstellung>2026-01-15</DatumDerErstellung>
+        <Gueltigkeitsbereich>Baustelle A-17</Gueltigkeitsbereich>
+        <SiFa>Beate Beispiel</SiFa>
+        <Betriebsarzt>Dr. Arzt</Betriebsarzt>
+    </GeneralData>
+    <Trades>
+        <Trade>
+            <TradeNo>1</TradeNo>
+            <TradeName>Gerüstbau</TradeName>
+            <Areas>
+                <Area>
+                    <AreaNo>10</AreaNo>
+                    <AreaName>Montage</AreaName>
+                    <Annotation>Montage auf der Baustelle</Annotation>
+                    <Processes>
+                        <Process>
+                            <ProcessId>101</ProcessId>
+                            <ProcessName>Gerüst aufstellen</ProcessName>
+                            <Annotation>Arbeiten in Höhe</Annotation>
+                            <Hazards>
+                                <Hazard>
+                                    <HazardNumber>1</HazardNumber>
+                                    <HazardName>Sturz</HazardName>
+                                    <Risk>Hoch</Risk>
+                                    <Measures>
+                                        <Measure>
+                                            <MeasureText>Absicherung mit Geländer</MeasureText>
+                                            <ActionNeeded>true</ActionNeeded>
+                                            <DueDate>2026-02-15</DueDate>
+                                            <Responsible>Baustellenleiter</Responsible>
+                                            <ActualDate></ActualDate>
+                                            <Confirmation></Confirmation>
+                                        </Measure>
+                                    </Measures>
+                                </Hazard>
+                            </Hazards>
+                        </Process>
+                    </Processes>
+                </Area>
+                <Area>
+                    <AreaNo>20</AreaNo>
+                    <AreaName>Abbau</AreaName>
+                    <Annotation>Entfernung des Gerüstes</Annotation>
+                    <Processes>
+                        <Process>
+                            <ProcessId>201</ProcessId>
+                            <ProcessName>Gerüst abbauen</ProcessName>
+                            <Annotation>Arbeiten in Höhe</Annotation>
+                            <Hazards>
+                                <Hazard>
+                                    <HazardNumber>2</HazardNumber>
+                                    <HazardName>Quetschung</HazardName>
+                                    <Risk>Mittel</Risk>
+                                    <Measures>
+                                        <Measure>
+                                            <MeasureText>Schutzhelm und Handzeichen</MeasureText>
+                                            <ActionNeeded>false</ActionNeeded>
+                                            <DueDate>2026-02-20</DueDate>
+                                            <Responsible>Techniker</Responsible>
+                                            <ActualDate>2026-02-19</ActualDate>
+                                            <Confirmation>J. Tester</Confirmation>
+                                        </Measure>
+                                    </Measures>
+                                </Hazard>
+                            </Hazards>
+                        </Process>
+                    </Processes>
+                </Area>
+            </Areas>
+        </Trade>
+    </Trades>
+</GBUXML>
