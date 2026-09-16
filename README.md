@@ -167,6 +167,18 @@ Eine Gefährdungsbeurteilung sollte nicht an die Software gebunden sein, mit der
 
 GBUXML soll dafür eine offene technische Grundlage schaffen.
 
+## Installation für Endanwender
+
+Wer die Software einfach nutzen möchte, ohne selbst zu bauen, findet fertige Installationspakete auf der [Releases-Seite](https://github.com/klaus4772/GBUXML/releases):
+
+- **Windows**: `.msi` – Doppelklick zum Installieren
+- **macOS**: `.dmg` – öffnen und die App in den `Applications`-Ordner ziehen (da das Paket nicht signiert ist, muss beim ersten Start ggf. per Rechtsklick → „Öffnen" bestätigt werden, da macOS Gatekeeper sonst warnt)
+- **Linux**: `.deb` – z. B. mit `sudo apt install ./GBUXML-<version>.deb`
+
+Jede dieser Dateien enthält eine eigene, gebündelte Java-Runtime; es muss keine Java-Umgebung separat installiert werden.
+
+Die Installationspakete werden automatisch von GitHub Actions (`.github/workflows/release.yml`) gebaut, sobald ein Git-Tag im Format `vX.Y.Z` (z. B. `v1.0.0`) gepusht wird. Der Workflow baut parallel auf Windows-, macOS- und Linux-Runnern mit `jpackage` und veröffentlicht die drei Installer als Anhänge des zugehörigen GitHub Release.
+
 ## Ausführen
 
 Wichtig: JavaFX darf nicht wie eine normale Java-Klasse gestartet werden. In IntelliJ muss die App über Maven gestartet werden, damit die JavaFX-Module korrekt auf dem Module Path liegen.
@@ -196,22 +208,33 @@ Die Anwendung verwendet SQLite als lokale Datenbank unter:
 
 Dort werden Stammdaten für Kategorien wie Gewerke, Bereiche, Prozesse, Gefährdungen und Maßnahmen gespeichert.
 
-## jpackage für Windows-Desktop-Installer
+## jpackage für Portable-Distributionen
 
-Nach einem erfolgreichen Build kann ein Installer erzeugt werden:
+Nach einem erfolgreichen Build erzeugt Maven automatisch ein plattformspezifisches, lauffähiges App-Image.
 
-```powershell
+```bash
 mvn clean package
-powershell -ExecutionPolicy Bypass -File .\scripts\package-win-jpackage.ps1
 ```
 
-Alternativ direkt mit jpackage:
+Erstellt wird dann je nach Betriebssystem ein Paket im Ordner:
+
+- Windows: `target\jpackage\windows\GBUXML`
+- Linux: `target/jpackage/linux/GBUXML`
+- macOS: `target/jpackage/mac/GBUXML`
+
+Zusätzlich werden auch portable ZIP-Dateien erzeugt, z. B.:
+
+- `target\GBUXML-portable-windows.zip`
+- `target/GBUXML-portable-linux.zip`
+- `target/GBUXML-portable-mac.zip`
+
+Für ein direktes jpackage-Beispiel ohne Maven:
 
 ```powershell
-C:\Program Files\Java\jdk-21.0.12\bin\jpackage.exe --type exe --name GBUXML --app-version 1.0 --vendor "GBUXML" --input target --main-jar GBUXML-1.0-SNAPSHOT.jar --main-class com.gbuxml.GBUXMLApplication --dest target\jpackage --win-menu --win-shortcut --win-console false
+C:\Program Files\Java\jdk-21.0.12\bin\jpackage.exe --type app-image --name GBUXML --app-version 1.0 --vendor "GBUXML" --input target --main-jar GBUXML-1.0-SNAPSHOT.jar --main-class com.gbuxml.GBUXMLApplication --dest target\jpackage\windows
 ```
 
-Hinweis: Für ein echtes `.exe`-Installer-Paket wird WiX auf Windows benötigt. Falls WiX fehlt, erzeugt das Script automatisch ein lauffähiges `app-image`-Bundle statt des `.exe`-Installers.
+Hinweis: Ein echter Windows-Installer (`.exe`/`.msi`) benötigt zusätzlich WiX. Für einfache Verteilung ist das automatische `app-image`-Paket mit ZIP-Datei die beste und unkomplizierteste Lösung.
 
 ## Wichtige Dateien
 
