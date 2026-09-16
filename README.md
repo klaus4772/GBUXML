@@ -179,6 +179,18 @@ Jede dieser Dateien enthält eine eigene, gebündelte Java-Runtime; es muss kein
 
 Die Installationspakete werden automatisch von GitHub Actions (`.github/workflows/release.yml`) gebaut, sobald ein Git-Tag im Format `vX.Y.Z` (z. B. `v1.0.0`) gepusht wird. Der Workflow baut parallel auf Windows-, macOS- und Linux-Runnern mit `jpackage` und veröffentlicht die drei Installer als Anhänge des zugehörigen GitHub Release.
 
+## Lizenz
+
+GBUXML (Format-Spezifikation, XSD und Referenz-Viewer) steht unter der
+[Apache License 2.0](LICENSE). Damit kann jeder das Format und den
+Viewer-Code frei nutzen, verändern und auch in eigene, auch proprietäre
+Anwendungen integrieren. Die Lizenz enthält zudem eine explizite
+Patent-Freigabe aller Mitwirkenden.
+
+Die gebauten Installationspakete bündeln zusätzlich einige
+Drittanbieter-Bibliotheken unter ihren jeweils eigenen (permissiven)
+Lizenzen; Details dazu stehen in [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md).
+
 ## Ausführen
 
 Wichtig: JavaFX darf nicht wie eine normale Java-Klasse gestartet werden. In IntelliJ muss die App über Maven gestartet werden, damit die JavaFX-Module korrekt auf dem Module Path liegen.

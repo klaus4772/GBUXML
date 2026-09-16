@@ -6,7 +6,24 @@
 
     <groupId>com.example</groupId>
     <artifactId>GBUXML</artifactId>
-    <version>1.0-SNAPSHOT</version>
+    <version>1.0.0</version>
+
+    <name>GBUXML</name>
+    <description>Referenzimplementierung und Viewer für das offene GBUXML-Austauschformat für Gefährdungsbeurteilungen</description>
+    <url>https://github.com/klaus4772/GBUXML</url>
+
+    <licenses>
+        <license>
+            <name>Apache License, Version 2.0</name>
+            <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
+    <scm>
+        <url>https://github.com/klaus4772/GBUXML</url>
+        <connection>scm:git:https://github.com/klaus4772/GBUXML.git</connection>
+    </scm>
 
     <properties>
         <maven.compiler.release>21</maven.compiler.release>
@@ -14,6 +31,7 @@
         <javafx.version>21.0.7</javafx.version>
         <jaxb.version>4.0.5</jaxb.version>
         <sqlite.version>3.46.0.0</sqlite.version>
+        <app.version>1.0.0</app.version>
     </properties>
 
     <dependencies>
@@ -43,9 +61,19 @@
            <version>${sqlite.version}</version>
         </dependency>
         <dependency>
+           <groupId>org.postgresql</groupId>
+           <artifactId>postgresql</artifactId>
+           <version>42.7.4</version>
+        </dependency>
+        <dependency>
            <groupId>org.apache.pdfbox</groupId>
            <artifactId>pdfbox</artifactId>
            <version>3.0.2</version>
+        </dependency>
+        <dependency>
+           <groupId>org.apache.poi</groupId>
+           <artifactId>poi-ooxml</artifactId>
+           <version>5.3.0</version>
         </dependency>
     </dependencies>
 
@@ -100,6 +128,108 @@
                    </archive>
                </configuration>
            </plugin>
-        </plugins>
-    </build>
+       </plugins>
+   </build>
+
+   <profiles>
+       <profile>
+           <id>windows-package</id>
+           <activation>
+               <os>
+                   <family>windows</family>
+               </os>
+           </activation>
+           <build>
+               <plugins>
+                   <plugin>
+                       <groupId>org.codehaus.mojo</groupId>
+                       <artifactId>exec-maven-plugin</artifactId>
+                       <version>3.1.0</version>
+                       <executions>
+                           <execution>
+                               <id>package-windows-app-image</id>
+                               <phase>package</phase>
+                               <goals>
+                                   <goal>exec</goal>
+                               </goals>
+                               <configuration>
+                                   <executable>powershell.exe</executable>
+                                   <arguments>
+                                       <argument>-ExecutionPolicy</argument>
+                                       <argument>Bypass</argument>
+                                       <argument>-File</argument>
+                                       <argument>${project.basedir}/scripts/package-win-jpackage.ps1</argument>
+                                   </arguments>
+                               </configuration>
+                           </execution>
+                       </executions>
+                   </plugin>
+               </plugins>
+           </build>
+       </profile>
+       <profile>
+           <id>linux-package</id>
+           <activation>
+               <os>
+                   <family>linux</family>
+               </os>
+           </activation>
+           <build>
+               <plugins>
+                   <plugin>
+                       <groupId>org.codehaus.mojo</groupId>
+                       <artifactId>exec-maven-plugin</artifactId>
+                       <version>3.1.0</version>
+                       <executions>
+                           <execution>
+                               <id>package-linux-app-image</id>
+                               <phase>package</phase>
+                               <goals>
+                                   <goal>exec</goal>
+                               </goals>
+                               <configuration>
+                                   <executable>bash</executable>
+                                   <arguments>
+                                       <argument>${project.basedir}/scripts/package-jpackage.sh</argument>
+                                   </arguments>
+                               </configuration>
+                           </execution>
+                       </executions>
+                   </plugin>
+               </plugins>
+           </build>
+       </profile>
+       <profile>
+           <id>mac-package</id>
+           <activation>
+               <os>
+                   <family>mac</family>
+               </os>
+           </activation>
+           <build>
+               <plugins>
+                   <plugin>
+                       <groupId>org.codehaus.mojo</groupId>
+                       <artifactId>exec-maven-plugin</artifactId>
+                       <version>3.1.0</version>
+                       <executions>
+                           <execution>
+                               <id>package-mac-app-image</id>
+                               <phase>package</phase>
+                               <goals>
+                                   <goal>exec</goal>
+                               </goals>
+                               <configuration>
+                                   <executable>bash</executable>
+                                   <arguments>
+                                       <argument>${project.basedir}/scripts/package-jpackage.sh</argument>
+                                   </arguments>
+                               </configuration>
+                           </execution>
+                       </executions>
+                   </plugin>
+               </plugins>
+           </build>
+       </profile>
+   </profiles>
 </project>

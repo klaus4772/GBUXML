@@ -1,3 +1,18 @@
+/*
+ * Copyright 2025-2026 GBUXML Contributors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package com.gbuxml;
 
 import javafx.application.Application;
@@ -8,12 +23,12 @@ import javafx.beans.property.StringProperty;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.geometry.Insets;
+import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.scene.control.cell.ComboBoxTableCell;
 import javafx.scene.control.cell.PropertyValueFactory;
-import javafx.scene.control.cell.TextFieldTableCell;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
@@ -27,20 +42,28 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public class GBUXMLApplication extends Application {
     private static final String APP_TITLE = "GBUXML Viewer";
     private final TabPane tabPane = new TabPane();
     private final ToggleButton editToggle = new ToggleButton("Bearbeitungsmodus ein");
     private final ComboBox<String> masterCategoryCombo = new ComboBox<>(FXCollections.observableArrayList(
-            "Gewerk", "Bereich", "Prozess", "Gefährdung", "Maßnahme"
+            "Prozess", "Gefährdung", "Maßnahme"
     ));
     private final TextField masterTextField = new TextField();
     private final Button addMasterDatumButton = new Button("Stammdaten hinzufügen");
+    private final Button manageMasterDataButton = new Button("Stammdaten bearbeiten");
+    private final Button manageRelationsButton = new Button("Verknüpfungen bearbeiten");
+    private final Button resetMasterDataButton = new Button("Stammdaten zurücksetzen");
     private final DatabaseService databaseService = DatabaseService.defaultDatabase();
     private final ComboBox<String> masterValueSuggestionCombo = new ComboBox<>();
 
@@ -64,7 +87,6 @@ public class GBUXMLApplication extends Application {
         root.setTop(createTopBar());
         root.setCenter(tabPane);
 
-        loadDefaultSample();
         refreshTabs();
 
         Scene scene = new Scene(root, 1200, 760);
@@ -79,48 +101,165 @@ public class GBUXMLApplication extends Application {
         Menu fileMenu = new Menu("Datei");
         MenuItem openItem = new MenuItem("XML öffnen");
         openItem.setOnAction(e -> openXmlFile());
+        MenuItem importExcelItem = new MenuItem("Excel importieren");
+        importExcelItem.setOnAction(e -> importExcelFile());
         MenuItem saveItem = new MenuItem("XML speichern");
         saveItem.setOnAction(e -> saveXmlFile());
         MenuItem exportPdfItem = new MenuItem("PDF exportieren");
         exportPdfItem.setOnAction(e -> exportPdfFile());
-        fileMenu.getItems().addAll(openItem, saveItem, exportPdfItem);
+        fileMenu.getItems().addAll(openItem, importExcelItem, saveItem, exportPdfItem);
 
         Menu editMenu = new Menu("Bearbeiten");
         MenuItem toggleItem = new MenuItem("Bearbeitungsmodus umschalten");
         toggleItem.setOnAction(e -> toggleEditMode());
-        editMenu.getItems().add(toggleItem);
+        MenuItem manageMasterDataItem = new MenuItem("Stammdaten bearbeiten");
+        manageMasterDataItem.setOnAction(e -> openMasterDataEditorDialog());
+        MenuItem manageRelationsItem = new MenuItem("Verknüpfungen bearbeiten");
+        manageRelationsItem.setOnAction(e -> openMasterDataRelationsDialog());
+        MenuItem resetMasterDataItem = new MenuItem("Stammdaten zurücksetzen");
+        resetMasterDataItem.setOnAction(e -> resetMasterDataForTesting());
+        MenuItem databaseSettingsItem = new MenuItem("Datenbankeinstellungen");
+        databaseSettingsItem.setOnAction(e -> openDatabaseSettingsDialog());
+        MenuItem generalSettingsItem = new MenuItem("Allgemein");
+        generalSettingsItem.setOnAction(e -> openGeneralSettingsDialog());
+        editMenu.getItems().addAll(toggleItem, manageMasterDataItem, manageRelationsItem, resetMasterDataItem, databaseSettingsItem, generalSettingsItem);
         menuBar.getMenus().addAll(fileMenu, editMenu);
 
         HBox toolbar = new HBox(10);
         toolbar.setPadding(new Insets(10));
         editToggle.setOnAction(e -> toggleEditMode());
-        masterCategoryCombo.setValue("Gewerk");
-        masterCategoryCombo.valueProperty().addListener((obs, oldValue, newValue) -> refreshMasterSuggestions());
-        masterTextField.setPrefWidth(220);
-        masterValueSuggestionCombo.setPromptText("Vorhandene Stammdaten");
-        masterValueSuggestionCombo.setVisibleRowCount(8);
-        masterValueSuggestionCombo.setOnAction(e -> {
-            String value = masterValueSuggestionCombo.getValue();
-            if (value != null && !value.isBlank()) {
-                masterTextField.setText(value);
-            }
-        });
-        addMasterDatumButton.setOnAction(e -> addMasterDatum());
-        toolbar.getChildren().addAll(editToggle, new Label("Kategorie:"), masterCategoryCombo, masterTextField, masterValueSuggestionCombo, addMasterDatumButton);
+        manageMasterDataButton.setOnAction(e -> openMasterDataEditorDialog());
+        manageRelationsButton.setOnAction(e -> openMasterDataRelationsDialog());
+        resetMasterDataButton.setOnAction(e -> resetMasterDataForTesting());
+        toolbar.getChildren().addAll(editToggle, manageMasterDataButton, manageRelationsButton, resetMasterDataButton);
 
         VBox top = new VBox(menuBar, toolbar);
-        refreshMasterSuggestions();
         return top;
     }
 
-    private void loadDefaultSample() {
-        try (InputStream inputStream = getClass().getResourceAsStream("/sample-gbuxml.xml")) {
-            if (inputStream != null) {
-                document = XmlFileService.load(inputStream);
-            }
+    private void resetMasterDataForTesting() {
+        try {
+            databaseService.resetMasterData();
+            refreshMasterSuggestions();
+            showInfo("Stammdaten zurückgesetzt. Beispiel-Daten wurden neu angelegt.");
         } catch (Exception e) {
-            showAlert("Standard-XML konnte nicht geladen werden", e.getMessage());
+            showAlert("SQLite-Fehler", "Stammdaten konnten nicht zurückgesetzt werden: " + e.getMessage());
         }
+    }
+
+    private void openDatabaseSettingsDialog() {
+        Dialog<ButtonType> dialog = new Dialog<>();
+        dialog.setTitle("Datenbankeinstellungen");
+        dialog.setHeaderText("Interne oder externe Datenbank konfigurieren");
+        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+
+        ToggleGroup modeGroup = new ToggleGroup();
+        RadioButton internalRadio = new RadioButton("Interne Datenbank verwenden");
+        RadioButton externalRadio = new RadioButton("Externe PostgreSQL-Datenbank verwenden");
+        internalRadio.setToggleGroup(modeGroup);
+        externalRadio.setToggleGroup(modeGroup);
+
+        TextField hostField = new TextField();
+        TextField portField = new TextField();
+        TextField databaseField = new TextField();
+        TextField usernameField = new TextField();
+        PasswordField passwordField = new PasswordField();
+        hostField.setPromptText("Host");
+        portField.setPromptText("Port");
+        databaseField.setPromptText("Datenbank");
+        usernameField.setPromptText("Benutzer");
+        passwordField.setPromptText("Passwort");
+
+        Button createExternalDatabaseButton = new Button("Externe Datenbank anlegen");
+
+        DatabaseService.DatabaseConfig currentConfig = databaseService.getConfig();
+        boolean internal = currentConfig.internal();
+        internalRadio.setSelected(internal);
+        externalRadio.setSelected(!internal);
+        hostField.setText(currentConfig.host());
+        portField.setText(currentConfig.port());
+        databaseField.setText(currentConfig.database());
+        usernameField.setText(currentConfig.username());
+        passwordField.setText(currentConfig.password());
+
+        Runnable updateExternalFields = () -> {
+            boolean externalSelected = externalRadio.isSelected();
+            hostField.setDisable(!externalSelected);
+            portField.setDisable(!externalSelected);
+            databaseField.setDisable(!externalSelected);
+            usernameField.setDisable(!externalSelected);
+            passwordField.setDisable(!externalSelected);
+            createExternalDatabaseButton.setDisable(!externalSelected);
+        };
+
+        createExternalDatabaseButton.setOnAction(e -> {
+            String host = hostField.getText() == null ? "" : hostField.getText().trim();
+            String port = portField.getText() == null ? "" : portField.getText().trim();
+            String database = databaseField.getText() == null ? "" : databaseField.getText().trim();
+            String username = usernameField.getText() == null ? "" : usernameField.getText().trim();
+            String password = passwordField.getText() == null ? "" : passwordField.getText();
+            if (host.isBlank() || port.isBlank() || database.isBlank() || username.isBlank()) {
+                showInfo("Bitte alle Einstellungen für die externe Datenbank ausfüllen.");
+                return;
+            }
+            try {
+                DatabaseService externalService = new DatabaseService(DatabaseService.DatabaseConfig.postgres(host, port, database, username, password));
+                externalService.initialize();
+                showInfo("Externe Datenbank wurde angelegt.");
+            } catch (Exception ex) {
+                showAlert("Datenbankfehler", "Externe Datenbank konnte nicht angelegt werden: " + ex.getMessage());
+            }
+        });
+
+        modeGroup.selectedToggleProperty().addListener((obs, oldValue, newValue) -> updateExternalFields.run());
+        updateExternalFields.run();
+
+        GridPane grid = new GridPane();
+        grid.setHgap(10);
+        grid.setVgap(8);
+        grid.setPadding(new Insets(10));
+        Label restartInfoLabel = new Label("Hinweis: Nach dem Wechsel zwischen interner und externer Datenbank die Anwendung bitte neu starten.");
+        restartInfoLabel.setWrapText(true);
+        grid.add(internalRadio, 0, 0, 2, 1);
+        grid.add(externalRadio, 0, 1, 2, 1);
+        grid.add(new Label("Host:"), 0, 2);
+        grid.add(hostField, 1, 2);
+        grid.add(new Label("Port:"), 0, 3);
+        grid.add(portField, 1, 3);
+        grid.add(new Label("Datenbank:"), 0, 4);
+        grid.add(databaseField, 1, 4);
+        grid.add(new Label("Benutzer:"), 0, 5);
+        grid.add(usernameField, 1, 5);
+        grid.add(new Label("Passwort:"), 0, 6);
+        grid.add(passwordField, 1, 6);
+        grid.add(createExternalDatabaseButton, 1, 7);
+        grid.add(restartInfoLabel, 0, 8, 2, 1);
+
+        dialog.getDialogPane().setContent(grid);
+        dialog.showAndWait().ifPresent(result -> {
+            if (result != ButtonType.OK) {
+                return;
+            }
+            try {
+                if (internalRadio.isSelected()) {
+                    Path appDir = Paths.get(System.getProperty("user.home"), ".gbuxml");
+                    databaseService.configure(DatabaseService.DatabaseConfig.internal(appDir.resolve("gbuxml.db")));
+                } else {
+                    databaseService.configure(DatabaseService.DatabaseConfig.postgres(
+                            hostField.getText() == null ? "" : hostField.getText().trim(),
+                            portField.getText() == null ? "" : portField.getText().trim(),
+                            databaseField.getText() == null ? "" : databaseField.getText().trim(),
+                            usernameField.getText() == null ? "" : usernameField.getText().trim(),
+                            passwordField.getText() == null ? "" : passwordField.getText()
+                    ));
+                }
+                databaseService.initialize();
+                refreshMasterSuggestions();
+                showInfo("Datenbankeinstellungen gespeichert.");
+            } catch (Exception ex) {
+                showAlert("Datenbankfehler", "Datenbankeinstellungen konnten nicht gespeichert werden: " + ex.getMessage());
+            }
+        });
     }
 
     private void openXmlFile() {
@@ -139,6 +278,137 @@ public class GBUXMLApplication extends Application {
         } catch (Exception e) {
             showAlert("Datei konnte nicht geöffnet werden", e.getMessage());
         }
+    }
+
+    private void importExcelFile() {
+        FileChooser fileChooser = new FileChooser();
+        fileChooser.setTitle("Excel importieren");
+        fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Excel-Dateien", "*.xlsx"));
+        File file = fileChooser.showOpenDialog(tabPane.getScene() != null ? tabPane.getScene().getWindow() : null);
+        if (file == null) {
+            return;
+        }
+        try (InputStream inputStream = new FileInputStream(file)) {
+            ExcelImportService.WorkbookData workbookData = ExcelImportService.readWorkbook(inputStream);
+            ExcelImportService.ImportConfig config = showExcelImportConfigDialog(workbookData);
+            if (config == null) {
+                return;
+            }
+            try (InputStream importStream = new FileInputStream(file)) {
+                document = ExcelImportService.importWorkbook(importStream, config);
+            }
+            currentFile = null;
+            refreshTabs();
+            showInfo("Excel-Datei wurde importiert.");
+        } catch (Exception ex) {
+            showAlert("Excel-Importfehler", ex.getMessage());
+        }
+    }
+
+    private ExcelImportService.ImportConfig showExcelImportConfigDialog(ExcelImportService.WorkbookData workbookData) {
+        Dialog<ExcelImportService.ImportConfig> dialog = new Dialog<>();
+        dialog.setTitle("Excel-Import konfigurieren");
+        dialog.setHeaderText("Bereiche und Excel-Spalten zuordnen");
+        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+
+        CheckBox sheetsAreAreas = new CheckBox("Bereiche sind in Tabellenblättern abgebildet");
+        ListView<String> sheetList = new ListView<>(FXCollections.observableArrayList(workbookData.sheetNames()));
+        sheetList.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
+        sheetList.setPrefHeight(120);
+
+        ComboBox<String> headerSourceCombo = new ComboBox<>(FXCollections.observableArrayList(workbookData.sheetNames()));
+        headerSourceCombo.setPromptText("Tabellenblatt für Spaltenzuordnung");
+        if (!workbookData.sheetNames().isEmpty()) {
+            headerSourceCombo.setValue(workbookData.sheetNames().get(0));
+        }
+
+        Spinner<Integer> rowsToSkipSpinner = new Spinner<>(0, 1000, 0);
+        rowsToSkipSpinner.setEditable(true);
+
+        GridPane mappingGrid = new GridPane();
+        mappingGrid.setHgap(10);
+        mappingGrid.setVgap(8);
+
+        Map<String, ComboBox<String>> mappingControls = new LinkedHashMap<>();
+        List<String> targetFields = List.of(
+                "AreaName", "ProcessName", "ProcessAnnotation", "HazardNumber", "HazardName", "Risk",
+                "MeasureText", "ActionNeeded", "DueDate", "Responsible", "ActualDate",
+                "Confirmation", "EffectivenessControl", "Approval"
+        );
+        int row = 0;
+        for (String field : targetFields) {
+            ComboBox<String> combo = new ComboBox<>();
+            combo.setPromptText("Leer lassen");
+            mappingControls.put(field, combo);
+            mappingGrid.add(new Label(humanLabelForImportField(field) + ":"), 0, row);
+            mappingGrid.add(combo, 1, row);
+            row++;
+        }
+
+        Runnable refreshHeaderChoices = () -> {
+            String sheetName = headerSourceCombo.getValue();
+            List<String> columns = sheetName == null ? List.of() : workbookData.columnsBySheet().getOrDefault(sheetName, List.of());
+            ObservableList<String> values = FXCollections.observableArrayList();
+            values.add("");
+            values.addAll(columns);
+            for (ComboBox<String> combo : mappingControls.values()) {
+                String selected = combo.getValue();
+                combo.setItems(values);
+                combo.setValue(selected);
+            }
+        };
+        headerSourceCombo.valueProperty().addListener((obs, oldValue, newValue) -> refreshHeaderChoices.run());
+        refreshHeaderChoices.run();
+
+        GridPane grid = new GridPane();
+        grid.setHgap(10);
+        grid.setVgap(10);
+        grid.setPadding(new Insets(10));
+        grid.add(sheetsAreAreas, 0, 0, 2, 1);
+        grid.add(new Label("Bereichs-Tabellenblätter:"), 0, 1);
+        grid.add(sheetList, 1, 1);
+        grid.add(new Label("Spaltenzuordnung aus Blatt:"), 0, 2);
+        grid.add(headerSourceCombo, 1, 2);
+        grid.add(new Label("Kopfzeilen pro Blatt ignorieren:"), 0, 3);
+        grid.add(rowsToSkipSpinner, 1, 3);
+        grid.add(new Label("So viele Zeilen werden je Tabellenblatt am Anfang übersprungen, z. B. für Kopfdaten."), 0, 4, 2, 1);
+        grid.add(new Label("Es werden die Excel-Spalten A, B, C ... des ausgewählten Blatts angeboten."), 0, 5, 2, 1);
+        grid.add(mappingGrid, 0, 6, 2, 1);
+
+        sheetsAreAreas.selectedProperty().addListener((obs, oldValue, newValue) -> {
+            sheetList.setDisable(!newValue);
+            if (!newValue) {
+                sheetList.getSelectionModel().clearSelection();
+            }
+        });
+        sheetList.setDisable(true);
+
+        dialog.getDialogPane().setContent(new ScrollPane(grid));
+        dialog.setResultConverter(buttonType -> {
+            if (buttonType != ButtonType.OK) {
+                return null;
+            }
+            List<String> selectedSheets = sheetsAreAreas.isSelected()
+                    ? new ArrayList<>(sheetList.getSelectionModel().getSelectedItems())
+                    : new ArrayList<>(workbookData.sheetNames());
+            if (selectedSheets.isEmpty()) {
+                selectedSheets = new ArrayList<>(workbookData.sheetNames());
+            }
+            Map<String, String> mapping = new LinkedHashMap<>();
+            for (Map.Entry<String, ComboBox<String>> entry : mappingControls.entrySet()) {
+                String value = entry.getValue().getValue();
+                if (value != null && !value.isBlank()) {
+                    mapping.put(entry.getKey(), value);
+                }
+            }
+            return new ExcelImportService.ImportConfig(
+                    sheetsAreAreas.isSelected(),
+                    selectedSheets,
+                    mapping,
+                    rowsToSkipSpinner.getValue() == null ? 0 : rowsToSkipSpinner.getValue()
+            );
+        });
+        return dialog.showAndWait().orElse(null);
     }
 
     private void saveXmlFile() {
@@ -177,6 +447,98 @@ public class GBUXMLApplication extends Application {
         } catch (Exception e) {
             showAlert("PDF konnte nicht exportiert werden", e.getMessage());
         }
+    }
+
+    private void openGeneralSettingsDialog() {
+        Dialog<ButtonType> dialog = new Dialog<>();
+        dialog.setTitle("Allgemein");
+        dialog.setHeaderText("Allgemeine Angaben und Logo bearbeiten");
+        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+
+        GridPane grid = new GridPane();
+        grid.setHgap(10);
+        grid.setVgap(8);
+        grid.setPadding(new Insets(10));
+
+        Map<String, Control> controls = new LinkedHashMap<>();
+        int row = 0;
+        for (Map.Entry<String, String> entry : document.getGeneralData().entrySet()) {
+            grid.add(new Label(humanLabelForField(entry.getKey()) + ":"), 0, row);
+            if (isDateKey(entry.getKey())) {
+                DatePicker datePicker = new DatePicker();
+                if (entry.getValue() != null && !entry.getValue().isBlank()) {
+                    try {
+                        datePicker.setValue(LocalDate.parse(entry.getValue()));
+                    } catch (Exception ignored) {
+                    }
+                }
+                controls.put(entry.getKey(), datePicker);
+                grid.add(datePicker, 1, row);
+            } else {
+                TextField textField = new TextField(entry.getValue());
+                controls.put(entry.getKey(), textField);
+                grid.add(textField, 1, row);
+            }
+            row++;
+        }
+
+        TextField logoField = new TextField(document.getLogoPath());
+        logoField.setEditable(false);
+        Button chooseLogoButton = new Button("Logo auswählen");
+        chooseLogoButton.setOnAction(e -> {
+            FileChooser chooser = new FileChooser();
+            chooser.setTitle("Logo auswählen");
+            chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Bilddateien", "*.png", "*.jpg", "*.jpeg", "*.gif"));
+            File selected = chooser.showOpenDialog(tabPane.getScene() != null ? tabPane.getScene().getWindow() : null);
+            if (selected != null) {
+                logoField.setText(selected.getAbsolutePath());
+            }
+        });
+        Button clearLogoButton = new Button("Logo entfernen");
+        clearLogoButton.setOnAction(e -> logoField.clear());
+
+        ListView<String> contributorsList = new ListView<>(FXCollections.observableArrayList(document.getContributors()));
+        contributorsList.setPrefHeight(120);
+        TextField contributorField = new TextField();
+        contributorField.setPromptText("Mitwirkende Person");
+        Button addContributorButton = new Button("Hinzufügen");
+        addContributorButton.setOnAction(e -> {
+            String value = contributorField.getText() == null ? "" : contributorField.getText().trim();
+            if (!value.isBlank()) {
+                contributorsList.getItems().add(value);
+                contributorField.clear();
+            }
+        });
+        Button removeContributorButton = new Button("Entfernen");
+        removeContributorButton.setOnAction(e -> {
+            String selected = contributorsList.getSelectionModel().getSelectedItem();
+            if (selected != null) {
+                contributorsList.getItems().remove(selected);
+            }
+        });
+
+        grid.add(new Label("Logo für PDF:"), 0, row);
+        grid.add(new HBox(8, logoField, chooseLogoButton, clearLogoButton), 1, row);
+        row++;
+        grid.add(new Label("Mitwirkende:"), 0, row);
+        grid.add(new VBox(8, contributorsList, new HBox(8, contributorField, addContributorButton, removeContributorButton)), 1, row);
+
+        dialog.getDialogPane().setContent(new ScrollPane(grid));
+        dialog.showAndWait().ifPresent(result -> {
+            if (result != ButtonType.OK) {
+                return;
+            }
+            for (Map.Entry<String, Control> entry : controls.entrySet()) {
+                if (entry.getValue() instanceof DatePicker datePicker) {
+                    document.setGeneralValue(entry.getKey(), datePicker.getValue() == null ? "" : datePicker.getValue().toString());
+                } else if (entry.getValue() instanceof TextField textField) {
+                    document.setGeneralValue(entry.getKey(), textField.getText() == null ? "" : textField.getText());
+                }
+            }
+            document.setLogoPath(logoField.getText());
+            document.setContributors(new ArrayList<>(contributorsList.getItems()));
+            refreshTabs();
+        });
     }
 
     private void toggleEditMode() {
@@ -219,129 +581,663 @@ public class GBUXMLApplication extends Application {
         }
     }
 
+    private void copyCurrentRowToMasterData(String processText, String hazardText, String measureText) {
+        String processValue = processText == null ? "" : processText.trim();
+        String hazardValue = hazardText == null ? "" : hazardText.trim();
+        String measureValue = measureText == null ? "" : measureText.trim();
+
+        if (processText != null && !processText.trim().isEmpty()) {
+            try {
+                databaseService.saveMasterValue("Prozess", processValue);
+            } catch (Exception e) {
+                showAlert("SQLite-Fehler", "Prozess konnte nicht in Stammdaten kopiert werden: " + e.getMessage());
+                return;
+            }
+        }
+        if (hazardText != null && !hazardText.trim().isEmpty()) {
+            try {
+                databaseService.saveMasterValue("Gefährdung", hazardValue);
+            } catch (Exception e) {
+                showAlert("SQLite-Fehler", "Gefährdung konnte nicht in Stammdaten kopiert werden: " + e.getMessage());
+                return;
+            }
+        }
+        if (measureText != null && !measureText.trim().isEmpty()) {
+            try {
+                databaseService.saveMasterValue("Maßnahme", measureValue);
+            } catch (Exception e) {
+                showAlert("SQLite-Fehler", "Maßnahme konnte nicht in Stammdaten kopiert werden: " + e.getMessage());
+                return;
+            }
+        }
+        try {
+            if (!processValue.isBlank() && !hazardValue.isBlank()) {
+                databaseService.linkProcessToHazard(processValue, hazardValue);
+            }
+            if (!hazardValue.isBlank() && !measureValue.isBlank()) {
+                databaseService.linkHazardToMeasure(hazardValue, measureValue);
+            }
+        } catch (Exception e) {
+            showAlert("SQLite-Fehler", "Verknüpfungen konnten nicht in Stammdaten kopiert werden: " + e.getMessage());
+            return;
+        }
+        refreshMasterSuggestions();
+        showInfo("Datensatz in Stammdaten kopiert");
+    }
+
+    private void openMasterDataEditorDialog() {
+        Dialog<Void> dialog = new Dialog<>();
+        dialog.setTitle("Stammdaten bearbeiten");
+        dialog.setHeaderText("Prozesse, Gefährdungen und Maßnahmen verwalten");
+        dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
+
+        GridPane grid = new GridPane();
+        grid.setHgap(12);
+        grid.setVgap(10);
+        grid.setPadding(new Insets(12));
+
+        ListView<String> processList = new ListView<>();
+        ListView<String> hazardList = new ListView<>();
+        ListView<String> measureList = new ListView<>();
+        processList.setPrefHeight(240);
+        hazardList.setPrefHeight(240);
+        measureList.setPrefHeight(240);
+        processList.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
+        hazardList.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
+        measureList.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
+
+        TextField processField = new TextField();
+        TextField hazardField = new TextField();
+        TextField measureField = new TextField();
+        processField.setPromptText("Prozess");
+        hazardField.setPromptText("Gefährdung");
+        measureField.setPromptText("Maßnahme");
+
+        final boolean[] updatingLists = {false};
+        final ComboBox<String> displayProcessCombo = new ComboBox<>();
+        final ComboBox<String> displayHazardCombo = new ComboBox<>();
+        final ComboBox<String> displayMeasureCombo = new ComboBox<>();
+        Runnable refreshColumnValues = () -> {
+            try {
+                ObservableList<String> processes = FXCollections.observableArrayList(databaseService.loadMasterValues("Prozess"));
+                ObservableList<String> hazards = FXCollections.observableArrayList(databaseService.loadMasterValues("Gefährdung"));
+                ObservableList<String> measures = FXCollections.observableArrayList(databaseService.loadMasterValues("Maßnahme"));
+                processList.setItems(processes);
+                hazardList.setItems(hazards);
+                measureList.setItems(measures);
+                displayProcessCombo.setItems(processes);
+                displayHazardCombo.setItems(hazards);
+                displayMeasureCombo.setItems(measures);
+            } catch (Exception e) {
+                processList.setItems(FXCollections.emptyObservableList());
+                hazardList.setItems(FXCollections.emptyObservableList());
+                measureList.setItems(FXCollections.emptyObservableList());
+                displayProcessCombo.setItems(FXCollections.emptyObservableList());
+                displayHazardCombo.setItems(FXCollections.emptyObservableList());
+                displayMeasureCombo.setItems(FXCollections.emptyObservableList());
+            }
+        };
+
+        Runnable applyDisplayModeLists = () -> {
+            updatingLists[0] = true;
+            try {
+                ObservableList<String> allProcesses = FXCollections.observableArrayList(databaseService.loadMasterValues("Prozess"));
+                ObservableList<String> allHazards = FXCollections.observableArrayList(databaseService.loadMasterValues("Gefährdung"));
+                ObservableList<String> allMeasures = FXCollections.observableArrayList(databaseService.loadMasterValues("Maßnahme"));
+                String selectedProcess = displayProcessCombo.getValue();
+                String selectedHazard = displayHazardCombo.getValue();
+                String selectedMeasure = displayMeasureCombo.getValue();
+
+                processList.setItems(allProcesses);
+                hazardList.setItems(allHazards);
+                measureList.setItems(allMeasures);
+
+                if (selectedProcess != null && !selectedProcess.isBlank()) {
+                    processList.setItems(FXCollections.observableArrayList(selectedProcess));
+                    hazardList.setItems(FXCollections.observableArrayList(databaseService.loadHazardsForProcess(selectedProcess)));
+                    Set<String> linkedMeasures = new LinkedHashSet<>();
+                    for (String hazard : databaseService.loadHazardsForProcess(selectedProcess)) {
+                        linkedMeasures.addAll(databaseService.loadMeasuresForHazard(hazard));
+                    }
+                    measureList.setItems(FXCollections.observableArrayList(linkedMeasures));
+                    return;
+                }
+
+                if (selectedHazard != null && !selectedHazard.isBlank()) {
+                    hazardList.setItems(FXCollections.observableArrayList(selectedHazard));
+                    processList.setItems(FXCollections.observableArrayList(databaseService.loadProcessesForHazard(selectedHazard)));
+                    measureList.setItems(FXCollections.observableArrayList(databaseService.loadMeasuresForHazard(selectedHazard)));
+                    return;
+                }
+
+                if (selectedMeasure != null && !selectedMeasure.isBlank()) {
+                    measureList.setItems(FXCollections.observableArrayList(selectedMeasure));
+                    List<String> linkedHazards = databaseService.loadHazardsForMeasure(selectedMeasure);
+                    hazardList.setItems(FXCollections.observableArrayList(linkedHazards));
+                    Set<String> linkedProcesses = new LinkedHashSet<>();
+                    for (String hazard : linkedHazards) {
+                        linkedProcesses.addAll(databaseService.loadProcessesForHazard(hazard));
+                    }
+                    processList.setItems(FXCollections.observableArrayList(linkedProcesses));
+                }
+            } catch (Exception e) {
+                processList.setItems(FXCollections.emptyObservableList());
+                hazardList.setItems(FXCollections.emptyObservableList());
+                measureList.setItems(FXCollections.emptyObservableList());
+            } finally {
+                updatingLists[0] = false;
+            }
+        };
+        refreshColumnValues.run();
+
+        processList.getSelectionModel().selectedItemProperty().addListener((obs, oldValue, newValue) -> {
+            if (updatingLists[0] || newValue == null) {
+                return;
+            }
+            processField.clear();
+        });
+        hazardList.getSelectionModel().selectedItemProperty().addListener((obs, oldValue, newValue) -> {
+            if (updatingLists[0] || newValue == null) {
+                return;
+            }
+            hazardField.clear();
+        });
+        measureList.getSelectionModel().selectedItemProperty().addListener((obs, oldValue, newValue) -> {
+            if (updatingLists[0] || newValue == null) {
+                return;
+            }
+            measureField.clear();
+        });
+
+        Button processNew = new Button("Neu");
+        Button hazardNew = new Button("Neu");
+        Button measureNew = new Button("Neu");
+        Button processDelete = new Button("Löschen");
+        Button hazardDelete = new Button("Löschen");
+        Button measureDelete = new Button("Löschen");
+        Button processEdit = new Button("Bearbeiten");
+        Button hazardEdit = new Button("Bearbeiten");
+        Button measureEdit = new Button("Bearbeiten");
+
+        displayProcessCombo.setPromptText("Prozess auswählen");
+        displayHazardCombo.setPromptText("Gefährdung auswählen");
+        displayMeasureCombo.setPromptText("Maßnahme auswählen");
+        displayProcessCombo.valueProperty().addListener((obs, oldValue, newValue) -> {
+            if (updatingLists[0]) {
+                return;
+            }
+            if (newValue != null && !newValue.isBlank()) {
+                displayHazardCombo.setValue(null);
+                displayMeasureCombo.setValue(null);
+            }
+            applyDisplayModeLists.run();
+        });
+        displayHazardCombo.valueProperty().addListener((obs, oldValue, newValue) -> {
+            if (updatingLists[0]) {
+                return;
+            }
+            if (newValue != null && !newValue.isBlank()) {
+                displayProcessCombo.setValue(null);
+                displayMeasureCombo.setValue(null);
+            }
+            applyDisplayModeLists.run();
+        });
+        displayMeasureCombo.valueProperty().addListener((obs, oldValue, newValue) -> {
+            if (updatingLists[0]) {
+                return;
+            }
+            if (newValue != null && !newValue.isBlank()) {
+                displayProcessCombo.setValue(null);
+                displayHazardCombo.setValue(null);
+            }
+            applyDisplayModeLists.run();
+        });
+
+        processNew.setOnAction(e -> {
+            String value = processField.getText() == null ? "" : processField.getText().trim();
+            if (value.isEmpty()) {
+                return;
+            }
+            try {
+                databaseService.saveMasterValue("Prozess", value);
+                for (String hazard : hazardList.getSelectionModel().getSelectedItems()) {
+                    if (hazard != null && !hazard.isBlank()) {
+                        databaseService.linkProcessToHazard(value, hazard);
+                    }
+                }
+                refreshColumnValues.run();
+                processList.getSelectionModel().select(value);
+                processField.clear();
+            } catch (Exception ex) {
+                showAlert("SQLite-Fehler", ex.getMessage());
+            }
+        });
+        hazardNew.setOnAction(e -> {
+            String value = hazardField.getText() == null ? "" : hazardField.getText().trim();
+            if (value.isEmpty()) {
+                return;
+            }
+            try {
+                databaseService.saveMasterValue("Gefährdung", value);
+                for (String process : processList.getSelectionModel().getSelectedItems()) {
+                    if (process != null && !process.isBlank()) {
+                        databaseService.linkProcessToHazard(process, value);
+                    }
+                }
+                for (String measure : measureList.getSelectionModel().getSelectedItems()) {
+                    if (measure != null && !measure.isBlank()) {
+                        databaseService.linkHazardToMeasure(value, measure);
+                    }
+                }
+                refreshColumnValues.run();
+                hazardList.getSelectionModel().select(value);
+                hazardField.clear();
+            } catch (Exception ex) {
+                showAlert("SQLite-Fehler", ex.getMessage());
+            }
+        });
+        measureNew.setOnAction(e -> {
+            String value = measureField.getText() == null ? "" : measureField.getText().trim();
+            if (value.isEmpty()) {
+                return;
+            }
+            try {
+                databaseService.saveMasterValue("Maßnahme", value);
+                for (String hazard : hazardList.getSelectionModel().getSelectedItems()) {
+                    if (hazard != null && !hazard.isBlank()) {
+                        databaseService.linkHazardToMeasure(hazard, value);
+                    }
+                }
+                refreshColumnValues.run();
+                measureList.getSelectionModel().select(value);
+                measureField.clear();
+            } catch (Exception ex) {
+                showAlert("SQLite-Fehler", ex.getMessage());
+            }
+        });
+
+        processEdit.setOnAction(e -> {
+            String current = processList.getSelectionModel().getSelectedItem();
+            if (current == null || current.isBlank()) {
+                return;
+            }
+            TextInputDialog editDialog = new TextInputDialog(current);
+            editDialog.setTitle("Prozess bearbeiten");
+            editDialog.setHeaderText("Aktuell ausgewählter Prozess");
+            editDialog.setContentText("Prozess:");
+            editDialog.showAndWait().ifPresent(value -> {
+                String next = value == null ? "" : value.trim();
+                if (next.isBlank()) {
+                    return;
+                }
+                try {
+                    databaseService.updateMasterValue("Prozess", current, next);
+                    refreshColumnValues.run();
+                    processField.clear();
+                    processList.getSelectionModel().select(next);
+                    applyDisplayModeLists.run();
+                } catch (Exception ex) {
+                    showAlert("SQLite-Fehler", ex.getMessage());
+                }
+            });
+        });
+        hazardEdit.setOnAction(e -> {
+            String current = hazardList.getSelectionModel().getSelectedItem();
+            if (current == null || current.isBlank()) {
+                return;
+            }
+            TextInputDialog editDialog = new TextInputDialog(current);
+            editDialog.setTitle("Gefährdung bearbeiten");
+            editDialog.setHeaderText("Aktuell ausgewählte Gefährdung");
+            editDialog.setContentText("Gefährdung:");
+            editDialog.showAndWait().ifPresent(value -> {
+                String next = value == null ? "" : value.trim();
+                if (next.isBlank()) {
+                    return;
+                }
+                try {
+                    databaseService.updateMasterValue("Gefährdung", current, next);
+                    refreshColumnValues.run();
+                    hazardField.clear();
+                    hazardList.getSelectionModel().select(next);
+                    applyDisplayModeLists.run();
+                } catch (Exception ex) {
+                    showAlert("SQLite-Fehler", ex.getMessage());
+                }
+            });
+        });
+        measureEdit.setOnAction(e -> {
+            String current = measureList.getSelectionModel().getSelectedItem();
+            if (current == null || current.isBlank()) {
+                return;
+            }
+            TextInputDialog editDialog = new TextInputDialog(current);
+            editDialog.setTitle("Maßnahme bearbeiten");
+            editDialog.setHeaderText("Aktuell ausgewählte Maßnahme");
+            editDialog.setContentText("Maßnahme:");
+            editDialog.showAndWait().ifPresent(value -> {
+                String next = value == null ? "" : value.trim();
+                if (next.isBlank()) {
+                    return;
+                }
+                try {
+                    databaseService.updateMasterValue("Maßnahme", current, next);
+                    refreshColumnValues.run();
+                    measureField.clear();
+                    measureList.getSelectionModel().select(next);
+                    applyDisplayModeLists.run();
+                } catch (Exception ex) {
+                    showAlert("SQLite-Fehler", ex.getMessage());
+                }
+            });
+        });
+
+        processDelete.setOnAction(e -> {
+            String value = processList.getSelectionModel().getSelectedItem();
+            if (value == null || value.isBlank()) {
+                return;
+            }
+            try {
+                databaseService.deleteMasterValue("Prozess", value);
+                refreshColumnValues.run();
+                processField.clear();
+            } catch (Exception ex) {
+                showAlert("SQLite-Fehler", ex.getMessage());
+            }
+        });
+        hazardDelete.setOnAction(e -> {
+            String value = hazardList.getSelectionModel().getSelectedItem();
+            if (value == null || value.isBlank()) {
+                return;
+            }
+            try {
+                databaseService.deleteMasterValue("Gefährdung", value);
+                refreshColumnValues.run();
+                hazardField.clear();
+            } catch (Exception ex) {
+                showAlert("SQLite-Fehler", ex.getMessage());
+            }
+        });
+        measureDelete.setOnAction(e -> {
+            String value = measureList.getSelectionModel().getSelectedItem();
+            if (value == null || value.isBlank()) {
+                return;
+            }
+            try {
+                databaseService.deleteMasterValue("Maßnahme", value);
+                refreshColumnValues.run();
+                measureField.clear();
+            } catch (Exception ex) {
+                showAlert("SQLite-Fehler", ex.getMessage());
+            }
+        });
+
+        VBox processColumn = new VBox(8);
+        processColumn.getChildren().addAll(new Label("Prozesse"), displayProcessCombo, processList, new HBox(8, processField, processNew), new HBox(8, processEdit, processDelete));
+        VBox hazardColumn = new VBox(8);
+        hazardColumn.getChildren().addAll(new Label("Gefährdungen"), displayHazardCombo, hazardList, new HBox(8, hazardField, hazardNew), new HBox(8, hazardEdit, hazardDelete));
+        VBox measureColumn = new VBox(8);
+        measureColumn.getChildren().addAll(new Label("Maßnahmen"), displayMeasureCombo, measureList, new HBox(8, measureField, measureNew), new HBox(8, measureEdit, measureDelete));
+
+        grid.add(processColumn, 0, 0);
+        grid.add(hazardColumn, 1, 0);
+        grid.add(measureColumn, 2, 0);
+
+        dialog.getDialogPane().setContent(grid);
+        dialog.showAndWait();
+    }
+
+    private void openMasterDataRelationsDialog() {
+        Dialog<Void> dialog = new Dialog<>();
+        dialog.setTitle("Verknüpfungen bearbeiten");
+        dialog.setHeaderText("Prozesse, Gefährdungen und Maßnahmen verknüpfen");
+        dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
+
+        ListView<String> processList = new ListView<>();
+        ListView<String> hazardList = new ListView<>();
+        processList.setPrefHeight(320);
+        hazardList.setPrefHeight(320);
+        processList.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
+        hazardList.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
+
+        ComboBox<String> hazardCombo = new ComboBox<>();
+        ComboBox<String> measureCombo = new ComboBox<>();
+        hazardCombo.setPromptText("Gefährdung auswählen");
+        measureCombo.setPromptText("Maßnahme auswählen");
+
+        Button saveProcessLinks = new Button("Verknüpfung speichern");
+        Button saveHazardLinks = new Button("Verknüpfung speichern");
+
+        final boolean[] updating = {false};
+
+        Runnable refreshAll = () -> {
+            updating[0] = true;
+            try {
+                processList.setItems(loadMasterValuesSafe("Prozess"));
+                hazardList.setItems(loadMasterValuesSafe("Gefährdung"));
+                hazardCombo.setItems(loadMasterValuesSafe("Gefährdung"));
+                measureCombo.setItems(loadMasterValuesSafe("Maßnahme"));
+            } finally {
+                updating[0] = false;
+            }
+        };
+
+        Runnable applyProcessSelectionForHazard = () -> {
+            updating[0] = true;
+            try {
+                processList.getSelectionModel().clearSelection();
+                String selectedHazard = hazardCombo.getValue();
+                if (selectedHazard != null && !selectedHazard.isBlank()) {
+                    for (String process : databaseService.loadProcessesForHazard(selectedHazard)) {
+                        processList.getSelectionModel().select(process);
+                    }
+                }
+            } catch (Exception ex) {
+                processList.getSelectionModel().clearSelection();
+            } finally {
+                updating[0] = false;
+            }
+        };
+
+        Runnable applyHazardSelectionForMeasure = () -> {
+            updating[0] = true;
+            try {
+                hazardList.getSelectionModel().clearSelection();
+                String selectedMeasure = measureCombo.getValue();
+                if (selectedMeasure != null && !selectedMeasure.isBlank()) {
+                    for (String hazard : databaseService.loadHazardsForMeasure(selectedMeasure)) {
+                        hazardList.getSelectionModel().select(hazard);
+                    }
+                }
+            } catch (Exception ex) {
+                hazardList.getSelectionModel().clearSelection();
+            } finally {
+                updating[0] = false;
+            }
+        };
+
+        refreshAll.run();
+
+        hazardCombo.valueProperty().addListener((obs, oldValue, newValue) -> {
+            if (updating[0]) {
+                return;
+            }
+            applyProcessSelectionForHazard.run();
+        });
+        measureCombo.valueProperty().addListener((obs, oldValue, newValue) -> {
+            if (updating[0]) {
+                return;
+            }
+            applyHazardSelectionForMeasure.run();
+        });
+
+        saveProcessLinks.setOnAction(e -> {
+            String selectedHazard = hazardCombo.getValue();
+            if (selectedHazard == null || selectedHazard.isBlank()) {
+                showInfo("Bitte zuerst eine Gefährdung auswählen.");
+                return;
+            }
+            try {
+                List<String> selectedProcesses = new ArrayList<>(processList.getSelectionModel().getSelectedItems());
+                databaseService.clearRelationshipsForValue("Gefährdung", selectedHazard);
+                for (String process : selectedProcesses) {
+                    if (process != null && !process.isBlank()) {
+                        databaseService.linkProcessToHazard(process, selectedHazard);
+                    }
+                }
+                applyProcessSelectionForHazard.run();
+                showInfo("Verknüpfung gespeichert.");
+            } catch (Exception ex) {
+                showAlert("SQLite-Fehler", ex.getMessage());
+            }
+        });
+
+        saveHazardLinks.setOnAction(e -> {
+            String selectedMeasure = measureCombo.getValue();
+            if (selectedMeasure == null || selectedMeasure.isBlank()) {
+                showInfo("Bitte zuerst eine Maßnahme auswählen.");
+                return;
+            }
+            try {
+                List<String> selectedHazards = new ArrayList<>(hazardList.getSelectionModel().getSelectedItems());
+                databaseService.clearRelationshipsForValue("Maßnahme", selectedMeasure);
+                for (String hazard : selectedHazards) {
+                    if (hazard != null && !hazard.isBlank()) {
+                        databaseService.linkHazardToMeasure(hazard, selectedMeasure);
+                    }
+                }
+                applyHazardSelectionForMeasure.run();
+                showInfo("Verknüpfung gespeichert.");
+            } catch (Exception ex) {
+                showAlert("SQLite-Fehler", ex.getMessage());
+            }
+        });
+
+        VBox processColumn = new VBox(8, new Label("Prozesse"), processList);
+        VBox hazardComboColumn = new VBox(8, new Label("Gefährdung"), hazardCombo, saveProcessLinks);
+        VBox hazardListColumn = new VBox(8, new Label("Gefährdungen"), hazardList);
+        VBox measureComboColumn = new VBox(8, new Label("Maßnahme"), measureCombo, saveHazardLinks);
+
+        HBox layout = new HBox(16, processColumn, hazardComboColumn, hazardListColumn, measureComboColumn);
+        layout.setPadding(new Insets(12));
+
+        dialog.getDialogPane().setContent(layout);
+        dialog.showAndWait();
+    }
+
     private void refreshTabs() {
+        Tab selectedTab = tabPane.getSelectionModel().getSelectedItem();
+        String selectedTitle = selectedTab != null ? selectedTab.getText() : null;
+
         tabPane.getTabs().clear();
         tabPane.getTabs().add(createGeneralTab());
         tabPane.getTabs().add(createOverviewTab());
-        tabPane.getTabs().add(createStructureTab());
-
-        for (GbuXmlDocument.Trade trade : document.getTrades()) {
-            for (GbuXmlDocument.Area area : trade.getAreas()) {
-                tabPane.getTabs().add(createAreaTab(trade, area));
+        if (!document.getTrades().isEmpty()) {
+            tabPane.getTabs().add(createStructureTab());
+            for (GbuXmlDocument.Trade trade : document.getTrades()) {
+                for (GbuXmlDocument.Area area : trade.getAreas()) {
+                    tabPane.getTabs().add(createAreaTab(trade, area));
+                }
             }
         }
 
-        if (document.getTrades().isEmpty()) {
-            tabPane.getTabs().add(createEmptyTab());
+        if (selectedTitle != null && !selectedTitle.isBlank()) {
+            selectTabByText(selectedTitle);
+        } else {
+            selectTabByText("Allgemein");
         }
     }
 
     private Tab createGeneralTab() {
         TableView<GeneralRow> table = new TableView<>();
         table.setEditable(editModeEnabled);
-        table.setPrefWidth(500);
+        table.getSelectionModel().setCellSelectionEnabled(true);
+        table.setColumnResizePolicy(TableView.UNCONSTRAINED_RESIZE_POLICY);
 
         TableColumn<GeneralRow, String> fieldCol = new TableColumn<>("Feld");
         fieldCol.setCellValueFactory(cell -> new SimpleStringProperty(humanLabelForField(cell.getValue().getKey())));
+        fieldCol.setEditable(false);
+        fieldCol.setPrefWidth(260);
 
         TableColumn<GeneralRow, String> valueCol = new TableColumn<>("Wert");
         valueCol.setCellValueFactory(cell -> cell.getValue().valueProperty());
-        valueCol.setCellFactory(TextFieldTableCell.forTableColumn());
-        valueCol.setOnEditCommit(event -> {
-            GeneralRow row = event.getRowValue();
-            row.setValue(event.getNewValue());
-            document.setGeneralValue(row.getKey(), event.getNewValue());
+        valueCol.setCellFactory(column -> {
+            TableCell<GeneralRow, String> cell = new TableCell<>() {
+                private final TextField textField = new TextField();
+
+                @Override
+                public void startEdit() {
+                    if (!isEmpty() && editModeEnabled) {
+                        super.startEdit();
+                        GeneralRow row = getTableRow() == null ? null : getTableRow().getItem();
+                        textField.setText(row == null ? getItem() : row.getValue());
+                        setText(null);
+                        setGraphic(textField);
+                        textField.requestFocus();
+                        textField.selectAll();
+                    }
+                }
+
+                @Override
+                public void cancelEdit() {
+                    super.cancelEdit();
+                    setGraphic(null);
+                    setText(getItem());
+                }
+
+                @Override
+                protected void updateItem(String item, boolean empty) {
+                    super.updateItem(item, empty);
+                    if (empty) {
+                        setText(null);
+                        setGraphic(null);
+                    } else if (isEditing()) {
+                        textField.setText(item);
+                        setText(null);
+                        setGraphic(textField);
+                    } else {
+                        setText(item);
+                        setGraphic(null);
+                    }
+                }
+
+                {
+                    textField.setOnAction(e -> commitCurrentValue());
+                    textField.focusedProperty().addListener((obs, oldValue, newValue) -> {
+                        if (!newValue && isEditing()) {
+                            commitCurrentValue();
+                        }
+                    });
+                }
+
+                private void commitCurrentValue() {
+                    String newValue = textField.getText() == null ? "" : textField.getText();
+                    GeneralRow row = getTableRow() == null ? null : getTableRow().getItem();
+                    if (row != null) {
+                        row.setValue(newValue);
+                        document.setGeneralValue(row.getKey(), newValue);
+                    }
+                    commitEdit(newValue);
+                }
+            };
+            return cell;
         });
+        valueCol.setEditable(true);
+        valueCol.setPrefWidth(520);
 
         table.getColumns().addAll(fieldCol, valueCol);
         table.setItems(buildGeneralRows());
 
-        VBox editorPane = new VBox(10);
-        editorPane.setPadding(new Insets(10));
-        editorPane.setPrefWidth(360);
-        editorPane.getChildren().add(new Label("Bitte Zeile auswählen"));
-
-        table.getSelectionModel().selectedItemProperty().addListener((obs, oldSelection, selected) -> updateGeneralEditor(editorPane, selected));
-
-        ListView<String> contributorsList = new ListView<>(FXCollections.observableArrayList(document.getContributors()));
-        contributorsList.setPrefHeight(150);
-
-        TextField contributorField = new TextField();
-        contributorField.setPromptText("Mitwirkende Person");
-        Button addContributorButton = new Button("Hinzufügen");
-        addContributorButton.setOnAction(e -> {
-            String value = contributorField.getText() == null ? "" : contributorField.getText().trim();
-            if (!value.isEmpty()) {
-                document.addContributor(value);
-                contributorField.clear();
-                contributorsList.setItems(FXCollections.observableArrayList(document.getContributors()));
-                if (table.getSelectionModel().getSelectedItem() != null) {
-                    updateGeneralEditor(editorPane, table.getSelectionModel().getSelectedItem());
-                }
-            }
-        });
-        Button removeContributorButton = new Button("Entfernen");
-        removeContributorButton.setOnAction(e -> {
-            String selected = contributorsList.getSelectionModel().getSelectedItem();
-            if (selected != null) {
-                document.removeContributor(selected);
-                contributorsList.setItems(FXCollections.observableArrayList(document.getContributors()));
-                if (table.getSelectionModel().getSelectedItem() != null) {
-                    updateGeneralEditor(editorPane, table.getSelectionModel().getSelectedItem());
-                }
-            }
-        });
-
-        HBox contentRow = new HBox(12, table, editorPane);
-        contentRow.setPadding(new Insets(12));
-
         VBox content = new VBox(12);
         content.setPadding(new Insets(12));
-        content.getChildren().addAll(contentRow, new Label("Mitwirkende"), new HBox(8, contributorField, addContributorButton, removeContributorButton), contributorsList);
+        if (currentFile == null) {
+            content.getChildren().add(new Label("Die allgemeinen Angaben werden über Bearbeiten > Allgemein gepflegt."));
+        }
+        content.getChildren().add(table);
 
         Tab tab = new Tab("Allgemein");
         tab.setContent(content);
         return tab;
-    }
-
-    private void updateGeneralEditor(VBox editorPane, GeneralRow selected) {
-        editorPane.getChildren().clear();
-        if (selected == null) {
-            editorPane.getChildren().add(new Label("Bitte Zeile auswählen."));
-            return;
-        }
-
-        Label title = new Label(humanLabelForField(selected.getKey()));
-        title.setStyle("-fx-font-weight: bold;");
-
-        String key = selected.getKey();
-        if (isDateKey(key)) {
-            DatePicker datePicker = new DatePicker();
-            if (!selected.getValue().isBlank()) {
-                try {
-                    datePicker.setValue(LocalDate.parse(selected.getValue()));
-                } catch (Exception ignored) {
-                    // ignore invalid value and let the user choose a valid date
-                }
-            }
-            Button saveButton = new Button("Speichern");
-            saveButton.setOnAction(e -> {
-                String value = datePicker.getValue() == null ? "" : datePicker.getValue().toString();
-                selected.setValue(value);
-                document.setGeneralValue(key, value);
-            });
-            editorPane.getChildren().addAll(title, datePicker, saveButton);
-            return;
-        }
-
-        TextField textField = new TextField(selected.getValue());
-        Button saveButton = new Button("Speichern");
-        saveButton.setOnAction(e -> {
-            String value = textField.getText() == null ? "" : textField.getText();
-            selected.setValue(value);
-            document.setGeneralValue(key, value);
-        });
-        editorPane.getChildren().addAll(title, textField, saveButton);
     }
 
     private boolean isDateKey(String key) {
@@ -354,9 +1250,13 @@ public class GBUXMLApplication extends Application {
         riskSummary.setVgap(12);
         riskSummary.setPadding(new Insets(10));
 
-        addRiskSummaryCell(riskSummary, 0, 0, "Hoch", colorRiskCell("#d32f2f"), countRiskLevel("Hoch"));
-        addRiskSummaryCell(riskSummary, 1, 0, "Mittel", colorRiskCell("#f4d35e"), countRiskLevel("Mittel"));
-        addRiskSummaryCell(riskSummary, 2, 0, "Gering", colorRiskCell("#6ccf72"), countRiskLevel("Gering"));
+        Label riskHeader = new Label("Risiko");
+        riskHeader.setStyle("-fx-font-weight: bold;");
+        riskSummary.add(riskHeader, 0, 0, 3, 1);
+
+        addRiskSummaryCell(riskSummary, 0, 1, "hoch", colorRiskCell("#d32f2f"), countRiskLevel("Hoch"));
+        addRiskSummaryCell(riskSummary, 1, 1, "mittel", colorRiskCell("#f4d35e"), countRiskLevel("Mittel"));
+        addRiskSummaryCell(riskSummary, 2, 1, "gering", colorRiskCell("#6ccf72"), countRiskLevel("Gering"));
 
         TableView<OverviewRow> table = new TableView<>();
         TableColumn<OverviewRow, String> areaCol = new TableColumn<>("Bereich");
@@ -365,11 +1265,47 @@ public class GBUXMLApplication extends Application {
         TableColumn<OverviewRow, Integer> hazardCol = new TableColumn<>("Gefährdungen");
         hazardCol.setCellValueFactory(new PropertyValueFactory<>("hazards"));
 
-        TableColumn<OverviewRow, String> riskCol = new TableColumn<>("Risiko");
-        riskCol.setCellValueFactory(new PropertyValueFactory<>("riskSummary"));
-        riskCol.setCellFactory(column -> new TableCell<>() {
+        TableColumn<OverviewRow, Integer> riskHochCol = new TableColumn<>("hoch");
+        riskHochCol.setCellValueFactory(new PropertyValueFactory<>("riskHoch"));
+        riskHochCol.setCellFactory(column -> createRiskCountCell("#d32f2f"));
+
+        TableColumn<OverviewRow, Integer> riskMittelCol = new TableColumn<>("mittel");
+        riskMittelCol.setCellValueFactory(new PropertyValueFactory<>("riskMittel"));
+        riskMittelCol.setCellFactory(column -> createRiskCountCell("#f4d35e"));
+
+        TableColumn<OverviewRow, Integer> riskGeringCol = new TableColumn<>("gering");
+        riskGeringCol.setCellValueFactory(new PropertyValueFactory<>("riskGering"));
+        riskGeringCol.setCellFactory(column -> createRiskCountCell("#6ccf72"));
+
+        TableColumn<OverviewRow, Integer> riskGroupCol = new TableColumn<>("Risiko");
+        riskGroupCol.getColumns().addAll(riskHochCol, riskMittelCol, riskGeringCol);
+
+        TableColumn<OverviewRow, Integer> openMeasuresCol = new TableColumn<>("offen");
+        openMeasuresCol.setCellValueFactory(new PropertyValueFactory<>("openMeasures"));
+        openMeasuresCol.setCellFactory(column -> createMeasureCountCell("#dfe8ff"));
+
+        TableColumn<OverviewRow, Integer> closedMeasuresCol = new TableColumn<>("erledigt");
+        closedMeasuresCol.setCellValueFactory(new PropertyValueFactory<>("closedMeasures"));
+        closedMeasuresCol.setCellFactory(column -> createMeasureCountCell("#e9f7ea"));
+
+        TableColumn<OverviewRow, Integer> measureGroupCol = new TableColumn<>("Maßnahmen");
+        measureGroupCol.getColumns().addAll(openMeasuresCol, closedMeasuresCol);
+
+        table.getColumns().addAll(areaCol, hazardCol, riskGroupCol, measureGroupCol);
+        table.setItems(buildOverviewRows());
+
+        VBox content = new VBox(12, riskSummary, table);
+        content.setPadding(new Insets(10));
+
+        Tab tab = new Tab("Auswertung");
+        tab.setContent(content);
+        return tab;
+    }
+
+    private TableCell<OverviewRow, Integer> createRiskCountCell(String color) {
+        return new TableCell<>() {
             @Override
-            protected void updateItem(String item, boolean empty) {
+            protected void updateItem(Integer item, boolean empty) {
                 super.updateItem(item, empty);
                 if (empty || item == null) {
                     setText(null);
@@ -377,35 +1313,27 @@ public class GBUXMLApplication extends Application {
                     setStyle("");
                     return;
                 }
-
-                OverviewRow row = getTableView().getItems().get(getIndex());
-                GridPane riskGrid = new GridPane();
-                riskGrid.setHgap(4);
-                riskGrid.setVgap(2);
-                riskGrid.setPrefWidth(180);
-
-                addRiskMiniCell(riskGrid, 0, 0, "G", row.getRiskGering(), "#6ccf72");
-                addRiskMiniCell(riskGrid, 1, 0, "M", row.getRiskMittel(), "#f4d35e");
-                addRiskMiniCell(riskGrid, 2, 0, "H", row.getRiskHoch(), "#d32f2f");
-
-                setGraphic(riskGrid);
-                setText(null);
-                setStyle("");
+                setText(String.valueOf(item));
+                setStyle("-fx-background-color: " + color + "; -fx-text-fill: black; -fx-font-weight: bold; -fx-alignment: center;");
             }
-        });
+        };
+    }
 
-        TableColumn<OverviewRow, Integer> measureCol = new TableColumn<>("Maßnahmen");
-        measureCol.setCellValueFactory(new PropertyValueFactory<>("measures"));
-
-        table.getColumns().addAll(areaCol, hazardCol, riskCol, measureCol);
-        table.setItems(buildOverviewRows());
-
-        VBox content = new VBox(12, riskSummary, table);
-        content.setPadding(new Insets(10));
-
-        Tab tab = new Tab("Übersicht");
-        tab.setContent(content);
-        return tab;
+    private TableCell<OverviewRow, Integer> createMeasureCountCell(String color) {
+        return new TableCell<>() {
+            @Override
+            protected void updateItem(Integer item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setText(null);
+                    setGraphic(null);
+                    setStyle("");
+                    return;
+                }
+                setText(String.valueOf(item));
+                setStyle("-fx-background-color: " + color + "; -fx-text-fill: black; -fx-font-weight: bold; -fx-alignment: center;");
+            }
+        };
     }
 
     private void addRiskSummaryCell(GridPane grid, int column, int row, String label, String color, int count) {
@@ -682,7 +1610,6 @@ public class GBUXMLApplication extends Application {
         area.setAreaName("Neuer Bereich");
         trade.addArea(area);
         refreshTabs();
-        selectTabByText(trade.getTradeName() + " / " + area.getAreaName());
     }
 
     private void deleteTrade(GbuXmlDocument.Trade trade) {
@@ -803,6 +1730,12 @@ public class GBUXMLApplication extends Application {
         editorPane.setPrefWidth(520);
         editorPane.getChildren().add(new Label("Bitte Zeile auswählen"));
 
+        ScrollPane editorScroll = new ScrollPane(editorPane);
+        editorScroll.setFitToWidth(true);
+        editorScroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        editorScroll.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
+        editorScroll.setPrefViewportHeight(620);
+
         table.getSelectionModel().selectedItemProperty().addListener((obs, oldSelection, selected) -> {
             if (!editModeEnabled) {
                 editorPane.getChildren().clear();
@@ -822,9 +1755,11 @@ public class GBUXMLApplication extends Application {
             deleteRow.setOnAction(e -> deleteSelectedAreaRow(area, table));
             actions.getChildren().addAll(addAbove, addBelow, deleteRow);
 
-            HBox content = new HBox(12, table, editorPane);
+            SplitPane content = new SplitPane(table, editorScroll);
             content.setPadding(new Insets(10));
-            HBox.setHgrow(table, Priority.ALWAYS);
+            content.setDividerPositions(0.62);
+            content.setPrefHeight(700);
+            content.setMinHeight(400);
             String title = (trade.getTradeName().isEmpty() ? "Gewerk " + trade.getTradeNumber() : trade.getTradeName()) + " / " + area.getAreaName();
             Tab tab = new Tab(title);
             tab.setContent(new VBox(8, actions, content));
@@ -855,49 +1790,50 @@ public class GBUXMLApplication extends Application {
         form.setVgap(8);
         form.setPrefWidth(460);
 
-        TextField processField = new TextField(selected.getProcess());
-        ComboBox<String> processSuggestions = new ComboBox<>();
-        refreshMasterSuggestionsForCategory(processSuggestions, "Prozess");
-        processSuggestions.setEditable(true);
-        processSuggestions.setPromptText("Stamm");
-        processSuggestions.valueProperty().addListener((obs, oldValue, newValue) -> {
-            if (newValue != null && !newValue.isBlank()) {
-                processField.setText(newValue);
-            }
-        });
-        Button processSaveButton = new Button("Kopieren zu Stamm");
-        processSaveButton.setOnAction(e -> saveValueToMaster("Prozess", processField, processSuggestions));
+        TextArea processField = new TextArea(selected.getProcess());
+        processField.setWrapText(true);
+        processField.setPrefRowCount(3);
+        processField.setMinHeight(72);
+        processField.setPrefHeight(72);
 
-        TextField hazardField = new TextField(selected.getHazard());
-        ComboBox<String> hazardSuggestions = new ComboBox<>();
-        refreshMasterSuggestionsForCategory(hazardSuggestions, "Gefährdung");
-        hazardSuggestions.setEditable(true);
-        hazardSuggestions.setPromptText("Stamm");
-        hazardSuggestions.valueProperty().addListener((obs, oldValue, newValue) -> {
-            if (newValue != null && !newValue.isBlank()) {
-                hazardField.setText(newValue);
-            }
-        });
-        Button hazardSaveButton = new Button("Kopieren zu Stamm");
-        hazardSaveButton.setOnAction(e -> saveValueToMaster("Gefährdung", hazardField, hazardSuggestions));
+        TextArea hazardField = new TextArea(selected.getHazard());
+        hazardField.setWrapText(true);
+        hazardField.setPrefRowCount(3);
+        hazardField.setMinHeight(72);
+        hazardField.setPrefHeight(72);
 
         ComboBox<String> riskCombo = new ComboBox<>(FXCollections.observableArrayList(GbuXmlDocument.RISKS));
         riskCombo.setValue(hazard == null || hazard.getRisk().isBlank() ? "Mittel" : normalizeRiskValue(hazard.getRisk()));
 
         TextArea measureField = new TextArea(measure == null ? selected.getMeasures() : measure.getMeasureText());
         measureField.setWrapText(true);
-        measureField.setPrefRowCount(4);
-        ComboBox<String> measureSuggestions = new ComboBox<>();
-        refreshMasterSuggestionsForCategory(measureSuggestions, "Maßnahme");
-        measureSuggestions.setEditable(true);
-        measureSuggestions.setPromptText("Stamm");
-        measureSuggestions.valueProperty().addListener((obs, oldValue, newValue) -> {
-            if (newValue != null && !newValue.isBlank()) {
-                measureField.setText(newValue);
+        measureField.setPrefRowCount(3);
+        measureField.setMinHeight(72);
+        measureField.setPrefHeight(72);
+
+        Button copyFromMasterButton = new Button("Kopieren aus Stamm");
+        copyFromMasterButton.setOnAction(e -> {
+            MasterLinkSelection selection = showMasterSelectionDialogForRow();
+            if (selection == null) {
+                return;
+            }
+            if (selection.processes != null && !selection.processes.isEmpty()) {
+                processField.setText(String.join(System.lineSeparator(), selection.processes));
+            }
+            if (selection.hazards != null && !selection.hazards.isEmpty()) {
+                hazardField.setText(String.join(System.lineSeparator(), selection.hazards));
+            }
+            if (selection.measures != null && !selection.measures.isEmpty()) {
+                measureField.setText(String.join(System.lineSeparator(), selection.measures));
             }
         });
-        Button measureSaveButton = new Button("Kopieren zu Stamm");
-        measureSaveButton.setOnAction(e -> saveValueToMaster("Maßnahme", measureField, measureSuggestions));
+
+        Button copyToMasterButton = new Button("Kopieren zu Stamm");
+        copyToMasterButton.setOnAction(e -> copyCurrentRowToMasterData(
+                processField.getText(),
+                hazardField.getText(),
+                measureField.getText()
+        ));
 
         DatePicker dueDatePicker = new DatePicker();
         if (measure != null && !measure.getDueDate().isBlank()) {
@@ -933,10 +1869,10 @@ public class GBUXMLApplication extends Application {
         approvalCombo.setValue((measure == null ? selected.getApproval() : measure.getApproval()));
 
         int row = 0;
-        form.add(createLabeledField("Prozess", createFieldWithMasterActions(processField, null, processSaveButton, processSuggestions)), 0, row++);
-        form.add(createLabeledField("Gefährdung", createFieldWithMasterActions(hazardField, null, hazardSaveButton, hazardSuggestions)), 0, row++);
+        form.add(createLabeledField("Prozess", processField), 0, row++);
+        form.add(createLabeledField("Gefährdung", hazardField), 0, row++);
         form.add(createLabeledField("Risiko", riskCombo), 0, row++);
-        form.add(createLabeledField("Maßnahme", createFieldWithMasterActions(measureField, null, measureSaveButton, measureSuggestions)), 0, row++);
+        form.add(createLabeledField("Maßnahme", measureField), 0, row++);
         form.add(createLabeledField("Soll-Termin", dueDatePicker), 0, row++);
         form.add(createLabeledField("Verantwortlicher", responsibleCombo), 0, row++);
         form.add(createLabeledField("Ist-Termin", actualDatePicker), 0, row++);
@@ -947,6 +1883,22 @@ public class GBUXMLApplication extends Application {
         Button saveButton = new Button("Änderungen speichern");
         saveButton.setOnAction(e -> {
             if (hazard != null) {
+                GbuXmlDocument.Process currentProcess = findProcessForAreaRow(area, selected);
+                if (currentProcess != null) {
+                    if (currentProcess.getHazards().size() > 1) {
+                        GbuXmlDocument.Process rowProcess = new GbuXmlDocument.Process();
+                        rowProcess.setProcessId(currentProcess.getProcessId());
+                        rowProcess.setProcessName(processField.getText() == null ? "" : processField.getText());
+                        currentProcess.getHazards().remove(hazard);
+                        rowProcess.addHazard(hazard);
+                        if (currentProcess.getHazards().isEmpty()) {
+                            area.getProcesses().remove(currentProcess);
+                        }
+                        area.getProcesses().add(rowProcess);
+                    } else if (!processField.getText().isBlank()) {
+                        currentProcess.setProcessName(processField.getText());
+                    }
+                }
                 hazard.setHazardName(hazardField.getText());
                 hazard.setRisk(normalizeRiskValue(riskCombo.getValue()));
                 if (measure != null) {
@@ -968,16 +1920,14 @@ public class GBUXMLApplication extends Application {
                     newMeasure.setApproval(approvalCombo.getValue() == null ? "" : approvalCombo.getValue());
                     hazard.addMeasure(newMeasure);
                 }
-                for (GbuXmlDocument.Process process : area.getProcesses()) {
-                    if (process.getHazards().contains(hazard)) {
-                        process.setProcessName(processField.getText());
-                    }
-                }
             }
             table.setItems(buildAreaRows(area));
         });
 
-        editorPane.getChildren().addAll(title, form, saveButton);
+        HBox editorHeader = new HBox(12);
+        editorHeader.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+        editorHeader.getChildren().addAll(title, copyFromMasterButton, copyToMasterButton);
+        editorPane.getChildren().addAll(editorHeader, form, saveButton);
     }
 
     private VBox createLabeledField(String labelText, Node control) {
@@ -985,28 +1935,68 @@ public class GBUXMLApplication extends Application {
         Label label = new Label(labelText);
         label.setStyle("-fx-font-weight: bold;");
         field.getChildren().addAll(label, control);
-        if (control instanceof TextArea || control instanceof VBox) {
-            field.setPrefWidth(300);
-        }
+        field.setPrefWidth(420);
+        field.setMinWidth(420);
         return field;
     }
 
-    private VBox createFieldWithMasterActions(TextInputControl field, Button loadButton, Button saveButton, ComboBox<String> suggestions) {
+    private VBox createMasterFieldWithButton(TextInputControl field, ComboBox<String> suggestions, Button saveButton) {
         VBox box = new VBox(6);
-        box.setPrefWidth(380);
+        box.setPrefWidth(420);
+        box.setMinWidth(420);
+
+        field.setPrefWidth(420);
+        field.setMinWidth(420);
+        field.setPrefHeight(72);
+        field.setMinHeight(72);
+        field.setMaxHeight(72);
         box.getChildren().add(field);
-        if (suggestions != null) {
-            suggestions.setPrefWidth(200);
-            HBox selectorRow = new HBox(6, new Label("Stamm:"), suggestions);
-            selectorRow.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
-            box.getChildren().add(selectorRow);
+
+        if (saveButton != null) {
+            HBox buttonRow = new HBox(8);
+            buttonRow.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+            saveButton.setMinWidth(150);
+            buttonRow.getChildren().add(saveButton);
+            box.getChildren().add(buttonRow);
         }
-        loadButton.setMinWidth(90);
-        saveButton.setMinWidth(150);
-        HBox buttons = new HBox(6, loadButton, saveButton);
-        buttons.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
-        box.getChildren().add(buttons);
         return box;
+    }
+
+    private void openSelectedMasterEditDialog(String category, ListView<String> list, String title) {
+        String current = list == null ? null : list.getSelectionModel().getSelectedItem();
+        if (current == null || current.isBlank()) {
+            return;
+        }
+
+        TextInputDialog dialog = new TextInputDialog(current);
+        dialog.setTitle(title);
+        dialog.setHeaderText("Eintrag bearbeiten");
+        dialog.setContentText("Wert:");
+        dialog.showAndWait().ifPresent(value -> {
+            String next = value == null ? "" : value.trim();
+            if (next.isBlank()) {
+                return;
+            }
+            try {
+                databaseService.updateMasterValue(category, current, next);
+                if (list != null) {
+                    list.setItems(FXCollections.observableArrayList(databaseService.loadMasterValues(category)));
+                    if (list.getItems().contains(next)) {
+                        list.getSelectionModel().select(next);
+                    }
+                }
+                applyLinkedViewAfterEdit(category, next);
+            } catch (Exception ex) {
+                showAlert("SQLite-Fehler", ex.getMessage());
+            }
+        });
+    }
+
+    private void applyLinkedViewAfterEdit(String category, String newValue) {
+        if (category == null || category.isBlank()) {
+            return;
+        }
+        refreshMasterSuggestions();
     }
 
     private void refreshMasterSuggestionsForCategory(ComboBox<String> suggestions, String category) {
@@ -1030,13 +2020,403 @@ public class GBUXMLApplication extends Application {
             return;
         }
         try {
+            MasterLinkSelection selection = showMasterLinkSelectionDialog(category, value);
+            if (selection == null) {
+                return;
+            }
             databaseService.saveMasterValue(category, value);
+
+            if (selection.withRelations) {
+                switch (category) {
+                    case "Prozess":
+                        for (String hazard : selection.hazards) {
+                            if (hazard != null && !hazard.isBlank()) {
+                                databaseService.linkProcessToHazard(value, hazard);
+                            }
+                        }
+                        break;
+                    case "Gefährdung":
+                        for (String process : selection.processes) {
+                            if (process != null && !process.isBlank()) {
+                                databaseService.linkProcessToHazard(process, value);
+                            }
+                        }
+                        for (String measure : selection.measures) {
+                            if (measure != null && !measure.isBlank()) {
+                                databaseService.linkHazardToMeasure(value, measure);
+                            }
+                        }
+                        break;
+                    case "Maßnahme":
+                        for (String hazard : selection.hazards) {
+                            if (hazard != null && !hazard.isBlank()) {
+                                databaseService.linkHazardToMeasure(hazard, value);
+                            }
+                        }
+                        break;
+                    default:
+                        break;
+                }
+            }
+
             if (suggestions != null) {
                 refreshMasterSuggestionsForCategory(suggestions, category);
             }
             showInfo("In Stammdaten gespeichert: " + value);
         } catch (Exception ex) {
             showAlert("Stammdatenfehler", ex.getMessage());
+        }
+    }
+
+    private MasterLinkSelection showMasterLinkSelectionDialog(String category, String value) {
+        return showMasterLinkSelectionDialog(category, value, false);
+    }
+
+    private MasterLinkSelection showMasterLinkSelectionDialog(String category, String value, boolean selectionMode) {
+        Dialog<MasterLinkSelection> dialog = new Dialog<>();
+        dialog.setTitle(selectionMode ? "Stammdaten auswählen" : "Stammdaten verknüpfen");
+        dialog.setHeaderText(selectionMode ? "Bitte " + category + " auswählen." : "Speichern von " + category + ": " + value);
+        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+
+        GridPane grid = new GridPane();
+        grid.setHgap(10);
+        grid.setVgap(8);
+        grid.setPadding(new Insets(10));
+
+        CheckBox withRelations = new CheckBox("Mit Verknüpfungen");
+        withRelations.setSelected(true);
+
+        ComboBox<String> processCombo = new ComboBox<>(loadMasterValuesSafe("Prozess"));
+        processCombo.setPromptText("Prozess");
+        processCombo.setEditable(true);
+
+        ComboBox<String> hazardCombo = new ComboBox<>();
+        hazardCombo.setPromptText("Gefährdung");
+        hazardCombo.setEditable(true);
+
+        ComboBox<String> measureCombo = new ComboBox<>(loadMasterValuesSafe("Maßnahme"));
+        measureCombo.setPromptText("Maßnahme");
+        measureCombo.setEditable(true);
+
+        if ("Prozess".equals(category)) {
+            processCombo.setValue(value);
+        }
+        if ("Gefährdung".equals(category)) {
+            hazardCombo.setValue(value);
+        }
+        if ("Maßnahme".equals(category)) {
+            measureCombo.setValue(value);
+        }
+
+        Runnable refreshRelations = () -> {
+            if (!withRelations.isSelected()) {
+                try {
+                    processCombo.setItems(loadMasterValuesSafe("Prozess"));
+                    hazardCombo.setItems(loadMasterValuesSafe("Gefährdung"));
+                    measureCombo.setItems(loadMasterValuesSafe("Maßnahme"));
+                } catch (Exception ignored) {
+                    processCombo.setItems(FXCollections.emptyObservableList());
+                    hazardCombo.setItems(FXCollections.emptyObservableList());
+                    measureCombo.setItems(FXCollections.emptyObservableList());
+                }
+                processCombo.setDisable(false);
+                hazardCombo.setDisable(false);
+                measureCombo.setDisable(false);
+                if ("Prozess".equals(category)) {
+                    processCombo.setValue(value);
+                } else {
+                    processCombo.setValue(null);
+                }
+                if ("Gefährdung".equals(category)) {
+                    hazardCombo.setValue(value);
+                } else {
+                    hazardCombo.setValue(null);
+                }
+                if ("Maßnahme".equals(category)) {
+                    measureCombo.setValue(value);
+                } else {
+                    measureCombo.setValue(null);
+                }
+                return;
+            }
+
+            processCombo.setDisable(false);
+            hazardCombo.setDisable(true);
+            measureCombo.setDisable(true);
+            if ("Prozess".equals(category)) {
+                processCombo.setValue(value);
+                try {
+                    if (processCombo.getValue() != null && !processCombo.getValue().isBlank()) {
+                        hazardCombo.setItems(FXCollections.observableArrayList(databaseService.loadHazardsForProcess(processCombo.getValue())));
+                        hazardCombo.setDisable(false);
+                    } else {
+                        hazardCombo.setItems(FXCollections.emptyObservableList());
+                    }
+                } catch (Exception ignored) {
+                    hazardCombo.setItems(FXCollections.emptyObservableList());
+                }
+            } else if ("Gefährdung".equals(category)) {
+                hazardCombo.setValue(value);
+                try {
+                    processCombo.setItems(loadMasterValuesSafe("Prozess"));
+                    if (hazardCombo.getValue() != null && !hazardCombo.getValue().isBlank()) {
+                        measureCombo.setItems(FXCollections.observableArrayList(databaseService.loadMeasuresForHazard(hazardCombo.getValue())));
+                        measureCombo.setDisable(false);
+                    } else {
+                        measureCombo.setItems(FXCollections.emptyObservableList());
+                    }
+                } catch (Exception ignored) {
+                    processCombo.setItems(FXCollections.emptyObservableList());
+                    measureCombo.setItems(FXCollections.emptyObservableList());
+                }
+                processCombo.setDisable(false);
+            } else if ("Maßnahme".equals(category)) {
+                measureCombo.setValue(value);
+                try {
+                    hazardCombo.setItems(loadMasterValuesSafe("Gefährdung"));
+                    hazardCombo.setDisable(false);
+                } catch (Exception ignored) {
+                    hazardCombo.setItems(FXCollections.emptyObservableList());
+                }
+            } else {
+                try {
+                    processCombo.setItems(loadMasterValuesSafe("Prozess"));
+                    hazardCombo.setItems(loadMasterValuesSafe("Gefährdung"));
+                    measureCombo.setItems(loadMasterValuesSafe("Maßnahme"));
+                } catch (Exception ignored) {
+                    processCombo.setItems(FXCollections.emptyObservableList());
+                    hazardCombo.setItems(FXCollections.emptyObservableList());
+                    measureCombo.setItems(FXCollections.emptyObservableList());
+                }
+            }
+        };
+
+        processCombo.valueProperty().addListener((obs, oldValue, newValue) -> {
+            if (!withRelations.isSelected()) {
+                return;
+            }
+            if (newValue == null || newValue.isBlank()) {
+                hazardCombo.setDisable(true);
+                hazardCombo.setItems(FXCollections.emptyObservableList());
+                return;
+            }
+            try {
+                hazardCombo.setItems(FXCollections.observableArrayList(databaseService.loadHazardsForProcess(newValue)));
+            } catch (Exception ignored) {
+                hazardCombo.setItems(FXCollections.emptyObservableList());
+            }
+            hazardCombo.setDisable(false);
+        });
+
+        hazardCombo.valueProperty().addListener((obs, oldValue, newValue) -> {
+            if (!withRelations.isSelected()) {
+                return;
+            }
+            if (newValue == null || newValue.isBlank()) {
+                measureCombo.setDisable(true);
+                measureCombo.setItems(FXCollections.emptyObservableList());
+                return;
+            }
+            try {
+                measureCombo.setItems(FXCollections.observableArrayList(databaseService.loadMeasuresForHazard(newValue)));
+            } catch (Exception ignored) {
+                measureCombo.setItems(FXCollections.emptyObservableList());
+            }
+            measureCombo.setDisable(false);
+        });
+
+        if (selectionMode) {
+            withRelations.setSelected(false);
+        }
+
+        withRelations.selectedProperty().addListener((obs, oldValue, newValue) -> refreshRelations.run());
+        refreshRelations.run();
+
+        grid.add(new Label("Verknüpfungen:"), 0, 0);
+        grid.add(withRelations, 1, 0);
+        grid.add(new Label("Prozess:"), 0, 1);
+        grid.add(processCombo, 1, 1);
+        grid.add(new Label("Gefährdung:"), 0, 2);
+        grid.add(hazardCombo, 1, 2);
+        grid.add(new Label("Maßnahme:"), 0, 3);
+        grid.add(measureCombo, 1, 3);
+
+        dialog.getDialogPane().setContent(grid);
+        dialog.setResultConverter(buttonType -> {
+            if (buttonType != ButtonType.OK) {
+                return null;
+            }
+            return new MasterLinkSelection(
+                    withRelations.isSelected(),
+                    processCombo.getValue() == null || processCombo.getValue().isBlank() ? List.of() : List.of(processCombo.getValue()),
+                    hazardCombo.getValue() == null || hazardCombo.getValue().isBlank() ? List.of() : List.of(hazardCombo.getValue()),
+                    measureCombo.getValue() == null || measureCombo.getValue().isBlank() ? List.of() : List.of(measureCombo.getValue())
+            );
+        });
+
+        return dialog.showAndWait().orElse(null);
+    }
+
+    private MasterLinkSelection showMasterSelectionDialogForRow() {
+        Dialog<MasterLinkSelection> dialog = new Dialog<>();
+        dialog.setTitle("Stammdaten auswählen");
+        dialog.setHeaderText("Bitte Einträge aus den Stammdaten auswählen.");
+        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+
+        ComboBox<String> processCombo = new ComboBox<>(loadMasterValuesSafe("Prozess"));
+        ComboBox<String> hazardCombo = new ComboBox<>(loadMasterValuesSafe("Gefährdung"));
+        ComboBox<String> measureCombo = new ComboBox<>(loadMasterValuesSafe("Maßnahme"));
+        processCombo.setPromptText("Prozess auswählen");
+        hazardCombo.setPromptText("Gefährdung auswählen");
+        measureCombo.setPromptText("Maßnahme auswählen");
+
+        ListView<String> processList = new ListView<>();
+        ListView<String> hazardList = new ListView<>();
+        ListView<String> measureList = new ListView<>();
+        processList.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
+        hazardList.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
+        measureList.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
+        processList.setPrefHeight(220);
+        hazardList.setPrefHeight(220);
+        measureList.setPrefHeight(220);
+
+        final boolean[] updating = {false};
+        Runnable refreshLists = () -> {
+            updating[0] = true;
+            try {
+                String selectedProcess = processCombo.getValue();
+                String selectedHazard = hazardCombo.getValue();
+                String selectedMeasure = measureCombo.getValue();
+
+                ObservableList<String> allProcesses = loadMasterValuesSafe("Prozess");
+                ObservableList<String> allHazards = loadMasterValuesSafe("Gefährdung");
+                ObservableList<String> allMeasures = loadMasterValuesSafe("Maßnahme");
+
+                processList.getSelectionModel().clearSelection();
+                hazardList.getSelectionModel().clearSelection();
+                measureList.getSelectionModel().clearSelection();
+
+                if (selectedProcess != null && !selectedProcess.isBlank()) {
+                    processList.setItems(FXCollections.observableArrayList(selectedProcess));
+                    List<String> linkedHazards = databaseService.loadHazardsForProcess(selectedProcess);
+                    hazardList.setItems(FXCollections.observableArrayList(linkedHazards));
+                    LinkedHashSet<String> linkedMeasures = new LinkedHashSet<>();
+                    for (String hazard : linkedHazards) {
+                        linkedMeasures.addAll(databaseService.loadMeasuresForHazard(hazard));
+                    }
+                    measureList.setItems(FXCollections.observableArrayList(linkedMeasures));
+                    processList.getSelectionModel().select(selectedProcess);
+                } else if (selectedHazard != null && !selectedHazard.isBlank()) {
+                    hazardList.setItems(FXCollections.observableArrayList(selectedHazard));
+                    List<String> linkedProcesses = databaseService.loadProcessesForHazard(selectedHazard);
+                    List<String> linkedMeasures = databaseService.loadMeasuresForHazard(selectedHazard);
+                    processList.setItems(FXCollections.observableArrayList(linkedProcesses));
+                    measureList.setItems(FXCollections.observableArrayList(linkedMeasures));
+                    hazardList.getSelectionModel().select(selectedHazard);
+                } else if (selectedMeasure != null && !selectedMeasure.isBlank()) {
+                    measureList.setItems(FXCollections.observableArrayList(selectedMeasure));
+                    List<String> linkedHazards = databaseService.loadHazardsForMeasure(selectedMeasure);
+                    hazardList.setItems(FXCollections.observableArrayList(linkedHazards));
+                    LinkedHashSet<String> linkedProcesses = new LinkedHashSet<>();
+                    for (String hazard : linkedHazards) {
+                        linkedProcesses.addAll(databaseService.loadProcessesForHazard(hazard));
+                    }
+                    processList.setItems(FXCollections.observableArrayList(linkedProcesses));
+                    measureList.getSelectionModel().select(selectedMeasure);
+                } else {
+                    processList.setItems(allProcesses);
+                    hazardList.setItems(allHazards);
+                    measureList.setItems(allMeasures);
+                }
+            } catch (Exception ex) {
+                processList.setItems(FXCollections.emptyObservableList());
+                hazardList.setItems(FXCollections.emptyObservableList());
+                measureList.setItems(FXCollections.emptyObservableList());
+            } finally {
+                updating[0] = false;
+            }
+        };
+
+        processCombo.valueProperty().addListener((obs, oldValue, newValue) -> {
+            if (updating[0]) {
+                return;
+            }
+            if (newValue != null && !newValue.isBlank()) {
+                hazardCombo.setValue(null);
+                measureCombo.setValue(null);
+            }
+            refreshLists.run();
+        });
+        hazardCombo.valueProperty().addListener((obs, oldValue, newValue) -> {
+            if (updating[0]) {
+                return;
+            }
+            if (newValue != null && !newValue.isBlank()) {
+                processCombo.setValue(null);
+                measureCombo.setValue(null);
+            }
+            refreshLists.run();
+        });
+        measureCombo.valueProperty().addListener((obs, oldValue, newValue) -> {
+            if (updating[0]) {
+                return;
+            }
+            if (newValue != null && !newValue.isBlank()) {
+                processCombo.setValue(null);
+                hazardCombo.setValue(null);
+            }
+            refreshLists.run();
+        });
+
+        refreshLists.run();
+
+        VBox processColumn = new VBox(8, new Label("Prozesse"), processCombo, processList);
+        VBox hazardColumn = new VBox(8, new Label("Gefährdungen"), hazardCombo, hazardList);
+        VBox measureColumn = new VBox(8, new Label("Maßnahmen"), measureCombo, measureList);
+        HBox content = new HBox(12, processColumn, hazardColumn, measureColumn);
+        content.setPadding(new Insets(10));
+        HBox.setHgrow(processColumn, Priority.ALWAYS);
+        HBox.setHgrow(hazardColumn, Priority.ALWAYS);
+        HBox.setHgrow(measureColumn, Priority.ALWAYS);
+        processColumn.setPrefWidth(260);
+        hazardColumn.setPrefWidth(260);
+        measureColumn.setPrefWidth(260);
+
+        dialog.getDialogPane().setContent(content);
+        dialog.setResultConverter(buttonType -> {
+            if (buttonType != ButtonType.OK) {
+                return null;
+            }
+            return new MasterLinkSelection(
+                    false,
+                    new ArrayList<>(processList.getSelectionModel().getSelectedItems()),
+                    new ArrayList<>(hazardList.getSelectionModel().getSelectedItems()),
+                    new ArrayList<>(measureList.getSelectionModel().getSelectedItems())
+            );
+        });
+
+        return dialog.showAndWait().orElse(null);
+    }
+
+    private ObservableList<String> loadMasterValuesSafe(String category) {
+        try {
+            return FXCollections.observableArrayList(databaseService.loadMasterValues(category));
+        } catch (Exception ignored) {
+            return FXCollections.emptyObservableList();
+        }
+    }
+
+    private static class MasterLinkSelection {
+        private final boolean withRelations;
+        private final List<String> processes;
+        private final List<String> hazards;
+        private final List<String> measures;
+
+        private MasterLinkSelection(boolean withRelations, List<String> processes, List<String> hazards, List<String> measures) {
+            this.withRelations = withRelations;
+            this.processes = processes == null ? List.of() : processes;
+            this.hazards = hazards == null ? List.of() : hazards;
+            this.measures = measures == null ? List.of() : measures;
         }
     }
 
@@ -1136,6 +2516,22 @@ public class GBUXMLApplication extends Application {
         }
     }
 
+    private GbuXmlDocument.Process findProcessForAreaRow(GbuXmlDocument.Area area, AreaRow row) {
+        if (area == null || row == null) {
+            return null;
+        }
+        for (GbuXmlDocument.Process process : area.getProcesses()) {
+            for (GbuXmlDocument.Hazard hazard : process.getHazards()) {
+                if (hazard.getHazardNumber() == row.getHazardNumber()) {
+                    if (row.getProcess() == null || row.getProcess().isBlank() || row.getProcess().equals(process.getProcessName())) {
+                        return process;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
     private GbuXmlDocument.Hazard findHazardForAreaRow(GbuXmlDocument.Area area, AreaRow row) {
         if (area == null || row == null) {
             return null;
@@ -1160,14 +2556,6 @@ public class GBUXMLApplication extends Application {
             }
         }
         return hazard.getMeasures().isEmpty() ? null : hazard.getMeasures().get(0);
-    }
-
-    private Tab createEmptyTab() {
-        Label label = new Label("Keine Daten vorhanden. Bitte XML-Datei öffnen oder neue Daten eingeben.");
-        label.setPadding(new Insets(20));
-        Tab tab = new Tab("Neues Gebiet");
-        tab.setContent(label);
-        return tab;
     }
 
     private ObservableList<GeneralRow> buildGeneralRows() {
@@ -1274,6 +2662,26 @@ public class GBUXMLApplication extends Application {
             case "Betriebsarzt": return "Betriebsarzt";
             default: return key;
         }
+    }
+
+    private String humanLabelForImportField(String key) {
+        return switch (key) {
+            case "AreaName" -> "Bereich";
+            case "ProcessName" -> "Prozess";
+            case "ProcessAnnotation" -> "Prozess-Anmerkung";
+            case "HazardNumber" -> "Gefährdungsnummer";
+            case "HazardName" -> "Gefährdung";
+            case "Risk" -> "Risiko";
+            case "MeasureText" -> "Maßnahme";
+            case "ActionNeeded" -> "Handlungsbedarf";
+            case "DueDate" -> "Soll-Termin";
+            case "Responsible" -> "Verantwortlicher";
+            case "ActualDate" -> "Ist-Termin";
+            case "Confirmation" -> "Bestätigung";
+            case "EffectivenessControl" -> "Wirkungskontrolle";
+            case "Approval" -> "Freigabe";
+            default -> key;
+        };
     }
 
     private String summarizeRisks(GbuXmlDocument.Area area) {

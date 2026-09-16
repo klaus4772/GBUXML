@@ -1,3 +1,18 @@
+/*
+ * Copyright 2025-2026 GBUXML Contributors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package com.gbuxml;
 
 import org.w3c.dom.Document;
@@ -26,6 +41,10 @@ public class XmlFileService {
 
         Element generalDataElement = getChildElement(root, "GeneralData");
         if (generalDataElement != null) {
+            String logoPath = generalDataElement.getAttribute("logoPath");
+            if (logoPath != null && !logoPath.isBlank()) {
+                gbuXmlDocument.setLogoPath(logoPath);
+            }
             Element contributorsElement = getChildElement(generalDataElement, "Mitwirkende");
             if (contributorsElement != null) {
                 for (Element personElement : getChildElements(contributorsElement)) {
@@ -131,16 +150,19 @@ public class XmlFileService {
         documentXml.appendChild(root);
 
         Element generalData = documentXml.createElement("GeneralData");
+        if (document.getLogoPath() != null && !document.getLogoPath().isBlank()) {
+            generalData.setAttribute("logoPath", sanitizeXmlText(document.getLogoPath()));
+        }
         for (Map.Entry<String, String> entry : document.getGeneralData().entrySet()) {
             Element field = documentXml.createElement(entry.getKey());
-            field.setTextContent(entry.getValue() == null ? "" : entry.getValue());
+            field.setTextContent(sanitizeXmlText(entry.getValue()));
             generalData.appendChild(field);
         }
         if (!document.getContributors().isEmpty()) {
             Element contributors = documentXml.createElement("Mitwirkende");
             for (String person : document.getContributors()) {
                 Element personElement = documentXml.createElement("Person");
-                personElement.setTextContent(person == null ? "" : person);
+                personElement.setTextContent(sanitizeXmlText(person));
                 contributors.appendChild(personElement);
             }
             generalData.appendChild(contributors);
@@ -210,8 +232,30 @@ public class XmlFileService {
 
     private static Element createTextElement(Document parent, String name, String value) {
         Element element = parent.createElement(name);
-        element.setTextContent(value == null ? "" : value);
+        element.setTextContent(sanitizeXmlText(value));
         return element;
+    }
+
+    private static String sanitizeXmlText(String value) {
+        if (value == null || value.isEmpty()) {
+            return "";
+        }
+        StringBuilder sanitized = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            if (isAllowedXmlChar(ch)) {
+                sanitized.append(ch);
+            }
+        }
+        return sanitized.toString();
+    }
+
+    private static boolean isAllowedXmlChar(char ch) {
+        return ch == 0x9
+                || ch == 0xA
+                || ch == 0xD
+                || (ch >= 0x20 && ch <= 0xD7FF)
+                || (ch >= 0xE000 && ch <= 0xFFFD);
     }
 
     private static Element getChildElement(Element parent, String name) {
