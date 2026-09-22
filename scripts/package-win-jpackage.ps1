@@ -54,7 +54,7 @@ $jarName = $jarFile.Name
 $cmdArgs = @(
     "--type", "app-image",
     "--name", "GBUXML",
-    "--app-version", "1.0.0",
+    "--app-version", "1.1.0",
     "--vendor", "GBUXML",
     "--input", $stagingDir,
     "--main-jar", $jarName,
@@ -71,7 +71,7 @@ $zipDir = Join-Path $projectRoot "dist"
 if (-not (Test-Path $zipDir)) {
     New-Item -ItemType Directory -Force -Path $zipDir | Out-Null
 }
-$zipPath = Join-Path $zipDir "GBUXML-portable-windows-1.0.0.zip"
+$zipPath = Join-Path $zipDir "GBUXML-portable-windows-1.1.0.zip"
 if (Test-Path $zipPath) {
     Remove-Item $zipPath -Force
 }

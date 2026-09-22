@@ -61,7 +61,8 @@
     <xs:complexType name="ProcessType">
         <xs:sequence>
             <xs:element name="ProcessId" type="xs:int"/>
-            <xs:element name="ProcessName" type="xs:string"/>
+            <xs:element name="ProcessNameShort" type="xs:string"/>
+            <xs:element name="ProcessNameLong" type="xs:string" minOccurs="0"/>
             <xs:element name="Annotation" type="xs:string" minOccurs="0"/>
             <xs:element name="Hazards" type="HazardsType"/>
         </xs:sequence>
@@ -76,7 +77,8 @@
     <xs:complexType name="HazardType">
         <xs:sequence>
             <xs:element name="HazardNumber" type="xs:int"/>
-            <xs:element name="HazardName" type="xs:string"/>
+            <xs:element name="HazardNameShort" type="xs:string"/>
+            <xs:element name="HazardNameLong" type="xs:string" minOccurs="0"/>
             <xs:element name="Risk" type="xs:string"/>
             <xs:element name="Measures" type="MeasuresType"/>
         </xs:sequence>
@@ -90,7 +92,8 @@
 
     <xs:complexType name="MeasureType">
         <xs:sequence>
-            <xs:element name="MeasureText" type="xs:string"/>
+            <xs:element name="MeasureTextShort" type="xs:string"/>
+            <xs:element name="MeasureTextLong" type="xs:string" minOccurs="0"/>
             <xs:element name="ActionNeeded" type="xs:boolean"/>
             <xs:element name="DueDate" type="xs:date" minOccurs="0"/>
             <xs:element name="Responsible" type="xs:string" minOccurs="0"/>

@@ -53,10 +53,16 @@ public class DatabaseService {
     }
 
     public void initialize() throws SQLException {
+        String idColumn = config.internal() ? "id INTEGER PRIMARY KEY AUTOINCREMENT" : "id SERIAL PRIMARY KEY";
         try (Connection connection = openConnection(); Statement statement = connection.createStatement()) {
-            statement.executeUpdate("CREATE TABLE IF NOT EXISTS master_data (id INTEGER PRIMARY KEY AUTOINCREMENT, category TEXT NOT NULL, label TEXT NOT NULL, UNIQUE(category, label));");
+            statement.executeUpdate("CREATE TABLE IF NOT EXISTS master_data (" + idColumn + ", category TEXT NOT NULL, label TEXT NOT NULL, detail_text TEXT NOT NULL DEFAULT '', UNIQUE(category, label));");
             statement.executeUpdate("CREATE TABLE IF NOT EXISTS master_process_hazard (process_id INTEGER NOT NULL, hazard_id INTEGER NOT NULL, PRIMARY KEY(process_id, hazard_id), FOREIGN KEY(process_id) REFERENCES master_data(id) ON DELETE CASCADE, FOREIGN KEY(hazard_id) REFERENCES master_data(id) ON DELETE CASCADE);");
             statement.executeUpdate("CREATE TABLE IF NOT EXISTS master_hazard_measure (hazard_id INTEGER NOT NULL, measure_id INTEGER NOT NULL, PRIMARY KEY(hazard_id, measure_id), FOREIGN KEY(hazard_id) REFERENCES master_data(id) ON DELETE CASCADE, FOREIGN KEY(measure_id) REFERENCES master_data(id) ON DELETE CASCADE);");
+            try {
+                statement.executeUpdate("ALTER TABLE master_data ADD COLUMN detail_text TEXT NOT NULL DEFAULT ''");
+            } catch (SQLException alreadyExists) {
+                // column already present from a previous run
+            }
         }
         seedExampleMasterData();
     }
@@ -108,18 +114,40 @@ public class DatabaseService {
     }
 
     public void saveMasterValue(String category, String value) throws SQLException {
+        saveMasterValue(category, value, "");
+    }
+
+    public void saveMasterValue(String category, String value, String detailText) throws SQLException {
         if (category == null || category.isBlank() || value == null || value.isBlank()) {
             return;
         }
-        String sql = "INSERT OR IGNORE INTO master_data(category, label) VALUES(?, ?)";
-        try (Connection connection = openConnection(); PreparedStatement statement = connection.prepareStatement(sql)) {
-            statement.setString(1, category.trim());
-            statement.setString(2, value.trim());
-            statement.executeUpdate();
+        String trimmedDetail = detailText == null ? "" : detailText.trim();
+        try (Connection connection = openConnection()) {
+            String insertSql = "INSERT OR IGNORE INTO master_data(category, label, detail_text) VALUES(?, ?, ?)";
+            int inserted;
+            try (PreparedStatement statement = connection.prepareStatement(insertSql)) {
+                statement.setString(1, category.trim());
+                statement.setString(2, value.trim());
+                statement.setString(3, trimmedDetail);
+                inserted = statement.executeUpdate();
+            }
+            if (inserted == 0 && !trimmedDetail.isEmpty()) {
+                String updateSql = "UPDATE master_data SET detail_text = ? WHERE category = ? AND label = ?";
+                try (PreparedStatement statement = connection.prepareStatement(updateSql)) {
+                    statement.setString(1, trimmedDetail);
+                    statement.setString(2, category.trim());
+                    statement.setString(3, value.trim());
+                    statement.executeUpdate();
+                }
+            }
         }
     }
 
     public void updateMasterValue(String category, String oldValue, String newValue) throws SQLException {
+        updateMasterValue(category, oldValue, newValue, null);
+    }
+
+    public void updateMasterValue(String category, String oldValue, String newValue, String newDetailText) throws SQLException {
         if (category == null || category.isBlank() || oldValue == null || oldValue.isBlank() || newValue == null) {
             return;
         }
@@ -129,14 +157,43 @@ public class DatabaseService {
             return;
         }
         try (Connection connection = openConnection()) {
-            String sql = "UPDATE master_data SET label = ? WHERE category = ? AND label = ?";
-            try (PreparedStatement statement = connection.prepareStatement(sql)) {
-                statement.setString(1, trimmedNew);
-                statement.setString(2, category.trim());
-                statement.setString(3, trimmedOld);
-                statement.executeUpdate();
+            if (newDetailText == null) {
+                String sql = "UPDATE master_data SET label = ? WHERE category = ? AND label = ?";
+                try (PreparedStatement statement = connection.prepareStatement(sql)) {
+                    statement.setString(1, trimmedNew);
+                    statement.setString(2, category.trim());
+                    statement.setString(3, trimmedOld);
+                    statement.executeUpdate();
+                }
+            } else {
+                String sql = "UPDATE master_data SET label = ?, detail_text = ? WHERE category = ? AND label = ?";
+                try (PreparedStatement statement = connection.prepareStatement(sql)) {
+                    statement.setString(1, trimmedNew);
+                    statement.setString(2, newDetailText.trim());
+                    statement.setString(3, category.trim());
+                    statement.setString(4, trimmedOld);
+                    statement.executeUpdate();
+                }
             }
         }
+    }
+
+    public String loadMasterDetailText(String category, String value) throws SQLException {
+        if (category == null || category.isBlank() || value == null || value.isBlank()) {
+            return "";
+        }
+        String sql = "SELECT detail_text FROM master_data WHERE category = ? AND label = ?";
+        try (Connection connection = openConnection(); PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, category.trim());
+            statement.setString(2, value.trim());
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (resultSet.next()) {
+                    String detail = resultSet.getString("detail_text");
+                    return detail == null ? "" : detail;
+                }
+            }
+        }
+        return "";
     }
 
     public void deleteMasterValue(String category, String value) throws SQLException {

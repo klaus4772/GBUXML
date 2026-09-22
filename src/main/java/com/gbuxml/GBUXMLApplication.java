@@ -64,7 +64,10 @@ public class GBUXMLApplication extends Application {
     private final Button manageMasterDataButton = new Button("Stammdaten bearbeiten");
     private final Button manageRelationsButton = new Button("Verknüpfungen bearbeiten");
     private final Button resetMasterDataButton = new Button("Stammdaten zurücksetzen");
+    private final Button newDocumentButton = new Button("Neue Gefährdungsbeurteilung");
     private final DatabaseService databaseService = DatabaseService.defaultDatabase();
+    private final AppSettingsService appSettingsService = new AppSettingsService();
+    private final TemplateService templateService = new TemplateService();
     private final ComboBox<String> masterValueSuggestionCombo = new ComboBox<>();
 
     private GbuXmlDocument document = GbuXmlDocument.emptyDocument();
@@ -105,11 +108,15 @@ public class GBUXMLApplication extends Application {
         importExcelItem.setOnAction(e -> importExcelFile());
         MenuItem saveItem = new MenuItem("XML speichern");
         saveItem.setOnAction(e -> saveXmlFile());
+        MenuItem saveAsTemplateItem = new MenuItem("Als Vorlage speichern");
+        saveAsTemplateItem.setOnAction(e -> saveCurrentDocumentAsTemplate());
+        MenuItem loadFromTemplateItem = new MenuItem("Aus Vorlage laden");
+        loadFromTemplateItem.setOnAction(e -> loadDocumentFromTemplate());
         MenuItem exportPdfItem = new MenuItem("PDF exportieren");
         exportPdfItem.setOnAction(e -> exportPdfFile());
-        fileMenu.getItems().addAll(openItem, importExcelItem, saveItem, exportPdfItem);
+        fileMenu.getItems().addAll(openItem, importExcelItem, saveItem, saveAsTemplateItem, loadFromTemplateItem, exportPdfItem);
 
-        Menu editMenu = new Menu("Bearbeiten");
+        Menu editMenu = new Menu("Einstellungen");
         MenuItem toggleItem = new MenuItem("Bearbeitungsmodus umschalten");
         toggleItem.setOnAction(e -> toggleEditMode());
         MenuItem manageMasterDataItem = new MenuItem("Stammdaten bearbeiten");
@@ -131,7 +138,8 @@ public class GBUXMLApplication extends Application {
         manageMasterDataButton.setOnAction(e -> openMasterDataEditorDialog());
         manageRelationsButton.setOnAction(e -> openMasterDataRelationsDialog());
         resetMasterDataButton.setOnAction(e -> resetMasterDataForTesting());
-        toolbar.getChildren().addAll(editToggle, manageMasterDataButton, manageRelationsButton, resetMasterDataButton);
+        newDocumentButton.setOnAction(e -> createNewDocument());
+        toolbar.getChildren().addAll(editToggle, manageMasterDataButton, manageRelationsButton, resetMasterDataButton, newDocumentButton);
 
         VBox top = new VBox(menuBar, toolbar);
         return top;
@@ -145,6 +153,111 @@ public class GBUXMLApplication extends Application {
         } catch (Exception e) {
             showAlert("SQLite-Fehler", "Stammdaten konnten nicht zurückgesetzt werden: " + e.getMessage());
         }
+    }
+
+    private void createNewDocument() {
+        if (!confirmDiscardCurrentDocument()) {
+            return;
+        }
+        GbuXmlDocument newDocument = GbuXmlDocument.emptyDocument();
+        for (Map.Entry<String, String> entry : appSettingsService.loadGeneralDefaults().entrySet()) {
+            newDocument.setGeneralValue(entry.getKey(), entry.getValue());
+        }
+        newDocument.setGeneralValue("DatumDerErstellung", LocalDate.now().toString());
+        newDocument.setLogoPath(appSettingsService.loadLogoPath());
+        newDocument.setContributors(appSettingsService.loadContributors());
+
+        document = newDocument;
+        currentFile = null;
+        editModeEnabled = true;
+        editToggle.setText("Bearbeitungsmodus aus");
+        refreshTabs();
+        selectTabByText("Allgemein");
+    }
+
+    private boolean isDocumentEmpty(GbuXmlDocument candidate) {
+        if (candidate == null) {
+            return true;
+        }
+        if (!candidate.getTrades().isEmpty()) {
+            return false;
+        }
+        if (!candidate.getContributors().isEmpty()) {
+            return false;
+        }
+        for (String value : candidate.getGeneralData().values()) {
+            if (value != null && !value.isBlank()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean confirmDiscardCurrentDocument() {
+        if (isDocumentEmpty(document) && currentFile == null) {
+            return true;
+        }
+        ButtonType saveButtonType = new ButtonType("Speichern");
+        ButtonType discardButtonType = new ButtonType("Verwerfen");
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION,
+                "Die aktuell geöffnete Gefährdungsbeurteilung ist noch nicht gesichert.",
+                saveButtonType, discardButtonType, ButtonType.CANCEL);
+        alert.setHeaderText("Aktuelle Gefährdungsbeurteilung verwerfen oder speichern?");
+        ButtonType result = alert.showAndWait().orElse(ButtonType.CANCEL);
+        if (result == saveButtonType) {
+            return saveXmlFile();
+        }
+        return result == discardButtonType;
+    }
+
+    private void saveCurrentDocumentAsTemplate() {
+        TextInputDialog dialog = new TextInputDialog();
+        dialog.setTitle("Als Vorlage speichern");
+        dialog.setHeaderText("Name für die Vorlage");
+        dialog.setContentText("Name:");
+        dialog.showAndWait().ifPresent(name -> {
+            String trimmed = name == null ? "" : name.trim();
+            if (trimmed.isEmpty()) {
+                return;
+            }
+            try {
+                templateService.saveTemplate(trimmed, document);
+                showInfo("Vorlage \"" + trimmed + "\" wurde gespeichert.");
+            } catch (Exception ex) {
+                showAlert("Vorlage konnte nicht gespeichert werden", ex.getMessage());
+            }
+        });
+    }
+
+    private void loadDocumentFromTemplate() {
+        List<String> names;
+        try {
+            names = templateService.listTemplateNames();
+        } catch (Exception ex) {
+            showAlert("Vorlagen konnten nicht geladen werden", ex.getMessage());
+            return;
+        }
+        if (names.isEmpty()) {
+            showInfo("Es sind keine Vorlagen gespeichert.");
+            return;
+        }
+        if (!confirmDiscardCurrentDocument()) {
+            return;
+        }
+        ChoiceDialog<String> dialog = new ChoiceDialog<>(names.get(0), names);
+        dialog.setTitle("Aus Vorlage laden");
+        dialog.setHeaderText("Vorlage auswählen");
+        dialog.setContentText("Vorlage:");
+        dialog.showAndWait().ifPresent(name -> {
+            try {
+                document = templateService.loadTemplate(name);
+                currentFile = null;
+                refreshTabs();
+                showInfo("Vorlage \"" + name + "\" wurde geladen.");
+            } catch (Exception ex) {
+                showAlert("Vorlage konnte nicht geladen werden", ex.getMessage());
+            }
+        });
     }
 
     private void openDatabaseSettingsDialog() {
@@ -263,6 +376,9 @@ public class GBUXMLApplication extends Application {
     }
 
     private void openXmlFile() {
+        if (!confirmDiscardCurrentDocument()) {
+            return;
+        }
         FileChooser fileChooser = new FileChooser();
         fileChooser.setTitle("GBUXML öffnen");
         fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("XML-Dateien", "*.xml"));
@@ -281,6 +397,9 @@ public class GBUXMLApplication extends Application {
     }
 
     private void importExcelFile() {
+        if (!confirmDiscardCurrentDocument()) {
+            return;
+        }
         FileChooser fileChooser = new FileChooser();
         fileChooser.setTitle("Excel importieren");
         fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Excel-Dateien", "*.xlsx"));
@@ -331,8 +450,8 @@ public class GBUXMLApplication extends Application {
 
         Map<String, ComboBox<String>> mappingControls = new LinkedHashMap<>();
         List<String> targetFields = List.of(
-                "AreaName", "ProcessName", "ProcessAnnotation", "HazardNumber", "HazardName", "Risk",
-                "MeasureText", "ActionNeeded", "DueDate", "Responsible", "ActualDate",
+                "AreaName", "ProcessName", "ProcessNameLong", "ProcessAnnotation", "HazardNumber", "HazardName", "HazardNameLong", "Risk",
+                "MeasureText", "MeasureTextLong", "ActionNeeded", "DueDate", "Responsible", "ActualDate",
                 "Confirmation", "EffectivenessControl", "Approval"
         );
         int row = 0;
@@ -411,7 +530,7 @@ public class GBUXMLApplication extends Application {
         return dialog.showAndWait().orElse(null);
     }
 
-    private void saveXmlFile() {
+    private boolean saveXmlFile() {
         File target = currentFile;
         if (target == null) {
             FileChooser fileChooser = new FileChooser();
@@ -419,7 +538,7 @@ public class GBUXMLApplication extends Application {
             fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("XML-Dateien", "*.xml"));
             target = fileChooser.showSaveDialog(tabPane.getScene() != null ? tabPane.getScene().getWindow() : null);
             if (target == null) {
-                return;
+                return false;
             }
             currentFile = target;
         }
@@ -427,12 +546,19 @@ public class GBUXMLApplication extends Application {
         try (OutputStream outputStream = new FileOutputStream(target)) {
             XmlFileService.save(document, outputStream);
             showInfo("XML wurde gespeichert.");
+            return true;
         } catch (Exception e) {
             showAlert("XML konnte nicht gespeichert werden", e.getMessage());
+            return false;
         }
     }
 
     private void exportPdfFile() {
+        PdfExportService.Orientation orientation = askPdfOrientation();
+        if (orientation == null) {
+            return;
+        }
+
         FileChooser fileChooser = new FileChooser();
         fileChooser.setTitle("PDF exportieren");
         fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("PDF-Dateien", "*.pdf"));
@@ -442,17 +568,39 @@ public class GBUXMLApplication extends Application {
         }
 
         try {
-            PdfExportService.export(document, target);
+            PdfExportService.export(document, target, orientation);
             showInfo("PDF wurde erfolgreich exportiert.");
         } catch (Exception e) {
             showAlert("PDF konnte nicht exportiert werden", e.getMessage());
         }
     }
 
+    private PdfExportService.Orientation askPdfOrientation() {
+        ToggleGroup group = new ToggleGroup();
+        RadioButton portraitRadio = new RadioButton("Hochformat");
+        RadioButton landscapeRadio = new RadioButton("Querformat");
+        portraitRadio.setToggleGroup(group);
+        landscapeRadio.setToggleGroup(group);
+        portraitRadio.setSelected(true);
+
+        Dialog<PdfExportService.Orientation> dialog = new Dialog<>();
+        dialog.setTitle("PDF exportieren");
+        dialog.setHeaderText("Seitenformat auswählen");
+        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+        dialog.getDialogPane().setContent(new VBox(8, portraitRadio, landscapeRadio));
+        dialog.setResultConverter(buttonType -> {
+            if (buttonType != ButtonType.OK) {
+                return null;
+            }
+            return landscapeRadio.isSelected() ? PdfExportService.Orientation.LANDSCAPE : PdfExportService.Orientation.PORTRAIT;
+        });
+        return dialog.showAndWait().orElse(null);
+    }
+
     private void openGeneralSettingsDialog() {
         Dialog<ButtonType> dialog = new Dialog<>();
         dialog.setTitle("Allgemein");
-        dialog.setHeaderText("Allgemeine Angaben und Logo bearbeiten");
+        dialog.setHeaderText("Standardangaben für neue Gefährdungsbeurteilungen");
         dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
 
         GridPane grid = new GridPane();
@@ -460,29 +608,18 @@ public class GBUXMLApplication extends Application {
         grid.setVgap(8);
         grid.setPadding(new Insets(10));
 
-        Map<String, Control> controls = new LinkedHashMap<>();
+        Map<String, String> defaults = appSettingsService.loadGeneralDefaults();
+        Map<String, TextField> controls = new LinkedHashMap<>();
         int row = 0;
-        for (Map.Entry<String, String> entry : document.getGeneralData().entrySet()) {
-            grid.add(new Label(humanLabelForField(entry.getKey()) + ":"), 0, row);
-            if (isDateKey(entry.getKey())) {
-                DatePicker datePicker = new DatePicker();
-                if (entry.getValue() != null && !entry.getValue().isBlank()) {
-                    try {
-                        datePicker.setValue(LocalDate.parse(entry.getValue()));
-                    } catch (Exception ignored) {
-                    }
-                }
-                controls.put(entry.getKey(), datePicker);
-                grid.add(datePicker, 1, row);
-            } else {
-                TextField textField = new TextField(entry.getValue());
-                controls.put(entry.getKey(), textField);
-                grid.add(textField, 1, row);
-            }
+        for (String key : AppSettingsService.generalKeys()) {
+            grid.add(new Label(humanLabelForField(key) + ":"), 0, row);
+            TextField textField = new TextField(defaults.get(key));
+            controls.put(key, textField);
+            grid.add(textField, 1, row);
             row++;
         }
 
-        TextField logoField = new TextField(document.getLogoPath());
+        TextField logoField = new TextField(appSettingsService.loadLogoPath());
         logoField.setEditable(false);
         Button chooseLogoButton = new Button("Logo auswählen");
         chooseLogoButton.setOnAction(e -> {
@@ -497,14 +634,14 @@ public class GBUXMLApplication extends Application {
         Button clearLogoButton = new Button("Logo entfernen");
         clearLogoButton.setOnAction(e -> logoField.clear());
 
-        ListView<String> contributorsList = new ListView<>(FXCollections.observableArrayList(document.getContributors()));
+        ListView<String> contributorsList = new ListView<>(FXCollections.observableArrayList(appSettingsService.loadContributors()));
         contributorsList.setPrefHeight(120);
         TextField contributorField = new TextField();
         contributorField.setPromptText("Mitwirkende Person");
         Button addContributorButton = new Button("Hinzufügen");
         addContributorButton.setOnAction(e -> {
             String value = contributorField.getText() == null ? "" : contributorField.getText().trim();
-            if (!value.isBlank()) {
+            if (!value.isBlank() && !contributorsList.getItems().contains(value)) {
                 contributorsList.getItems().add(value);
                 contributorField.clear();
             }
@@ -522,22 +659,27 @@ public class GBUXMLApplication extends Application {
         row++;
         grid.add(new Label("Mitwirkende:"), 0, row);
         grid.add(new VBox(8, contributorsList, new HBox(8, contributorField, addContributorButton, removeContributorButton)), 1, row);
+        row++;
+        Label infoLabel = new Label("Diese Angaben werden als Standardwerte für jede neue Gefährdungsbeurteilung übernommen. Die aktuell geöffnete Gefährdungsbeurteilung wird über den Reiter \"Allgemein\" bearbeitet.");
+        infoLabel.setWrapText(true);
+        infoLabel.setMaxWidth(420);
+        grid.add(infoLabel, 0, row, 2, 1);
 
         dialog.getDialogPane().setContent(new ScrollPane(grid));
         dialog.showAndWait().ifPresent(result -> {
             if (result != ButtonType.OK) {
                 return;
             }
-            for (Map.Entry<String, Control> entry : controls.entrySet()) {
-                if (entry.getValue() instanceof DatePicker datePicker) {
-                    document.setGeneralValue(entry.getKey(), datePicker.getValue() == null ? "" : datePicker.getValue().toString());
-                } else if (entry.getValue() instanceof TextField textField) {
-                    document.setGeneralValue(entry.getKey(), textField.getText() == null ? "" : textField.getText());
-                }
+            Map<String, String> newDefaults = new LinkedHashMap<>();
+            for (Map.Entry<String, TextField> entry : controls.entrySet()) {
+                newDefaults.put(entry.getKey(), entry.getValue().getText() == null ? "" : entry.getValue().getText());
             }
-            document.setLogoPath(logoField.getText());
-            document.setContributors(new ArrayList<>(contributorsList.getItems()));
-            refreshTabs();
+            try {
+                appSettingsService.save(newDefaults, logoField.getText(), new ArrayList<>(contributorsList.getItems()));
+                showInfo("Standardangaben wurden gespeichert.");
+            } catch (Exception ex) {
+                showAlert("Standardangaben konnten nicht gespeichert werden", ex.getMessage());
+            }
         });
     }
 
@@ -581,30 +723,30 @@ public class GBUXMLApplication extends Application {
         }
     }
 
-    private void copyCurrentRowToMasterData(String processText, String hazardText, String measureText) {
-        String processValue = processText == null ? "" : processText.trim();
-        String hazardValue = hazardText == null ? "" : hazardText.trim();
-        String measureValue = measureText == null ? "" : measureText.trim();
+    private void copyCurrentRowToMasterData(String processShort, String processLong, String hazardShort, String hazardLong, String measureShort, String measureLong) {
+        String processValue = processShort == null ? "" : processShort.trim();
+        String hazardValue = hazardShort == null ? "" : hazardShort.trim();
+        String measureValue = measureShort == null ? "" : measureShort.trim();
 
-        if (processText != null && !processText.trim().isEmpty()) {
+        if (!processValue.isEmpty()) {
             try {
-                databaseService.saveMasterValue("Prozess", processValue);
+                databaseService.saveMasterValue("Prozess", processValue, processLong);
             } catch (Exception e) {
                 showAlert("SQLite-Fehler", "Prozess konnte nicht in Stammdaten kopiert werden: " + e.getMessage());
                 return;
             }
         }
-        if (hazardText != null && !hazardText.trim().isEmpty()) {
+        if (!hazardValue.isEmpty()) {
             try {
-                databaseService.saveMasterValue("Gefährdung", hazardValue);
+                databaseService.saveMasterValue("Gefährdung", hazardValue, hazardLong);
             } catch (Exception e) {
                 showAlert("SQLite-Fehler", "Gefährdung konnte nicht in Stammdaten kopiert werden: " + e.getMessage());
                 return;
             }
         }
-        if (measureText != null && !measureText.trim().isEmpty()) {
+        if (!measureValue.isEmpty()) {
             try {
-                databaseService.saveMasterValue("Maßnahme", measureValue);
+                databaseService.saveMasterValue("Maßnahme", measureValue, measureLong);
             } catch (Exception e) {
                 showAlert("SQLite-Fehler", "Maßnahme konnte nicht in Stammdaten kopiert werden: " + e.getMessage());
                 return;
@@ -623,6 +765,14 @@ public class GBUXMLApplication extends Application {
         }
         refreshMasterSuggestions();
         showInfo("Datensatz in Stammdaten kopiert");
+    }
+
+    private String loadMasterDetailTextSafe(String category, String value) {
+        try {
+            return databaseService.loadMasterDetailText(category, value);
+        } catch (Exception ex) {
+            return "";
+        }
     }
 
     private void openMasterDataEditorDialog() {
@@ -649,9 +799,21 @@ public class GBUXMLApplication extends Application {
         TextField processField = new TextField();
         TextField hazardField = new TextField();
         TextField measureField = new TextField();
-        processField.setPromptText("Prozess");
-        hazardField.setPromptText("Gefährdung");
-        measureField.setPromptText("Maßnahme");
+        processField.setPromptText("Prozess (Kurztext)");
+        hazardField.setPromptText("Gefährdung (Kurztext)");
+        measureField.setPromptText("Maßnahme (Kurztext)");
+
+        TextArea processLongField = new TextArea();
+        TextArea hazardLongField = new TextArea();
+        TextArea measureLongField = new TextArea();
+        processLongField.setPromptText("Langtext (optional)");
+        hazardLongField.setPromptText("Langtext (optional)");
+        measureLongField.setPromptText("Langtext (optional)");
+        for (TextArea longField : List.of(processLongField, hazardLongField, measureLongField)) {
+            longField.setWrapText(true);
+            longField.setPrefRowCount(3);
+            longField.setPrefHeight(70);
+        }
 
         final boolean[] updatingLists = {false};
         final ComboBox<String> displayProcessCombo = new ComboBox<>();
@@ -735,18 +897,21 @@ public class GBUXMLApplication extends Application {
                 return;
             }
             processField.clear();
+            processLongField.clear();
         });
         hazardList.getSelectionModel().selectedItemProperty().addListener((obs, oldValue, newValue) -> {
             if (updatingLists[0] || newValue == null) {
                 return;
             }
             hazardField.clear();
+            hazardLongField.clear();
         });
         measureList.getSelectionModel().selectedItemProperty().addListener((obs, oldValue, newValue) -> {
             if (updatingLists[0] || newValue == null) {
                 return;
             }
             measureField.clear();
+            measureLongField.clear();
         });
 
         Button processNew = new Button("Neu");
@@ -799,7 +964,7 @@ public class GBUXMLApplication extends Application {
                 return;
             }
             try {
-                databaseService.saveMasterValue("Prozess", value);
+                databaseService.saveMasterValue("Prozess", value, processLongField.getText());
                 for (String hazard : hazardList.getSelectionModel().getSelectedItems()) {
                     if (hazard != null && !hazard.isBlank()) {
                         databaseService.linkProcessToHazard(value, hazard);
@@ -808,6 +973,7 @@ public class GBUXMLApplication extends Application {
                 refreshColumnValues.run();
                 processList.getSelectionModel().select(value);
                 processField.clear();
+                processLongField.clear();
             } catch (Exception ex) {
                 showAlert("SQLite-Fehler", ex.getMessage());
             }
@@ -818,7 +984,7 @@ public class GBUXMLApplication extends Application {
                 return;
             }
             try {
-                databaseService.saveMasterValue("Gefährdung", value);
+                databaseService.saveMasterValue("Gefährdung", value, hazardLongField.getText());
                 for (String process : processList.getSelectionModel().getSelectedItems()) {
                     if (process != null && !process.isBlank()) {
                         databaseService.linkProcessToHazard(process, value);
@@ -832,6 +998,7 @@ public class GBUXMLApplication extends Application {
                 refreshColumnValues.run();
                 hazardList.getSelectionModel().select(value);
                 hazardField.clear();
+                hazardLongField.clear();
             } catch (Exception ex) {
                 showAlert("SQLite-Fehler", ex.getMessage());
             }
@@ -842,7 +1009,7 @@ public class GBUXMLApplication extends Application {
                 return;
             }
             try {
-                databaseService.saveMasterValue("Maßnahme", value);
+                databaseService.saveMasterValue("Maßnahme", value, measureLongField.getText());
                 for (String hazard : hazardList.getSelectionModel().getSelectedItems()) {
                     if (hazard != null && !hazard.isBlank()) {
                         databaseService.linkHazardToMeasure(hazard, value);
@@ -851,6 +1018,7 @@ public class GBUXMLApplication extends Application {
                 refreshColumnValues.run();
                 measureList.getSelectionModel().select(value);
                 measureField.clear();
+                measureLongField.clear();
             } catch (Exception ex) {
                 showAlert("SQLite-Fehler", ex.getMessage());
             }
@@ -861,75 +1029,60 @@ public class GBUXMLApplication extends Application {
             if (current == null || current.isBlank()) {
                 return;
             }
-            TextInputDialog editDialog = new TextInputDialog(current);
-            editDialog.setTitle("Prozess bearbeiten");
-            editDialog.setHeaderText("Aktuell ausgewählter Prozess");
-            editDialog.setContentText("Prozess:");
-            editDialog.showAndWait().ifPresent(value -> {
-                String next = value == null ? "" : value.trim();
-                if (next.isBlank()) {
-                    return;
-                }
-                try {
-                    databaseService.updateMasterValue("Prozess", current, next);
-                    refreshColumnValues.run();
-                    processField.clear();
-                    processList.getSelectionModel().select(next);
-                    applyDisplayModeLists.run();
-                } catch (Exception ex) {
-                    showAlert("SQLite-Fehler", ex.getMessage());
-                }
-            });
+            MasterValueEdit edit = showMasterValueEditDialog("Prozess", current);
+            if (edit == null) {
+                return;
+            }
+            try {
+                databaseService.updateMasterValue("Prozess", current, edit.shortText(), edit.longText());
+                refreshColumnValues.run();
+                processField.clear();
+                processLongField.clear();
+                processList.getSelectionModel().select(edit.shortText());
+                applyDisplayModeLists.run();
+            } catch (Exception ex) {
+                showAlert("SQLite-Fehler", ex.getMessage());
+            }
         });
         hazardEdit.setOnAction(e -> {
             String current = hazardList.getSelectionModel().getSelectedItem();
             if (current == null || current.isBlank()) {
                 return;
             }
-            TextInputDialog editDialog = new TextInputDialog(current);
-            editDialog.setTitle("Gefährdung bearbeiten");
-            editDialog.setHeaderText("Aktuell ausgewählte Gefährdung");
-            editDialog.setContentText("Gefährdung:");
-            editDialog.showAndWait().ifPresent(value -> {
-                String next = value == null ? "" : value.trim();
-                if (next.isBlank()) {
-                    return;
-                }
-                try {
-                    databaseService.updateMasterValue("Gefährdung", current, next);
-                    refreshColumnValues.run();
-                    hazardField.clear();
-                    hazardList.getSelectionModel().select(next);
-                    applyDisplayModeLists.run();
-                } catch (Exception ex) {
-                    showAlert("SQLite-Fehler", ex.getMessage());
-                }
-            });
+            MasterValueEdit edit = showMasterValueEditDialog("Gefährdung", current);
+            if (edit == null) {
+                return;
+            }
+            try {
+                databaseService.updateMasterValue("Gefährdung", current, edit.shortText(), edit.longText());
+                refreshColumnValues.run();
+                hazardField.clear();
+                hazardLongField.clear();
+                hazardList.getSelectionModel().select(edit.shortText());
+                applyDisplayModeLists.run();
+            } catch (Exception ex) {
+                showAlert("SQLite-Fehler", ex.getMessage());
+            }
         });
         measureEdit.setOnAction(e -> {
             String current = measureList.getSelectionModel().getSelectedItem();
             if (current == null || current.isBlank()) {
                 return;
             }
-            TextInputDialog editDialog = new TextInputDialog(current);
-            editDialog.setTitle("Maßnahme bearbeiten");
-            editDialog.setHeaderText("Aktuell ausgewählte Maßnahme");
-            editDialog.setContentText("Maßnahme:");
-            editDialog.showAndWait().ifPresent(value -> {
-                String next = value == null ? "" : value.trim();
-                if (next.isBlank()) {
-                    return;
-                }
-                try {
-                    databaseService.updateMasterValue("Maßnahme", current, next);
-                    refreshColumnValues.run();
-                    measureField.clear();
-                    measureList.getSelectionModel().select(next);
-                    applyDisplayModeLists.run();
-                } catch (Exception ex) {
-                    showAlert("SQLite-Fehler", ex.getMessage());
-                }
-            });
+            MasterValueEdit edit = showMasterValueEditDialog("Maßnahme", current);
+            if (edit == null) {
+                return;
+            }
+            try {
+                databaseService.updateMasterValue("Maßnahme", current, edit.shortText(), edit.longText());
+                refreshColumnValues.run();
+                measureField.clear();
+                measureLongField.clear();
+                measureList.getSelectionModel().select(edit.shortText());
+                applyDisplayModeLists.run();
+            } catch (Exception ex) {
+                showAlert("SQLite-Fehler", ex.getMessage());
+            }
         });
 
         processDelete.setOnAction(e -> {
@@ -973,11 +1126,11 @@ public class GBUXMLApplication extends Application {
         });
 
         VBox processColumn = new VBox(8);
-        processColumn.getChildren().addAll(new Label("Prozesse"), displayProcessCombo, processList, new HBox(8, processField, processNew), new HBox(8, processEdit, processDelete));
+        processColumn.getChildren().addAll(new Label("Prozesse"), displayProcessCombo, processList, processField, processLongField, new HBox(8, processNew), new HBox(8, processEdit, processDelete));
         VBox hazardColumn = new VBox(8);
-        hazardColumn.getChildren().addAll(new Label("Gefährdungen"), displayHazardCombo, hazardList, new HBox(8, hazardField, hazardNew), new HBox(8, hazardEdit, hazardDelete));
+        hazardColumn.getChildren().addAll(new Label("Gefährdungen"), displayHazardCombo, hazardList, hazardField, hazardLongField, new HBox(8, hazardNew), new HBox(8, hazardEdit, hazardDelete));
         VBox measureColumn = new VBox(8);
-        measureColumn.getChildren().addAll(new Label("Maßnahmen"), displayMeasureCombo, measureList, new HBox(8, measureField, measureNew), new HBox(8, measureEdit, measureDelete));
+        measureColumn.getChildren().addAll(new Label("Maßnahmen"), displayMeasureCombo, measureList, measureField, measureLongField, new HBox(8, measureNew), new HBox(8, measureEdit, measureDelete));
 
         grid.add(processColumn, 0, 0);
         grid.add(hazardColumn, 1, 0);
@@ -985,6 +1138,44 @@ public class GBUXMLApplication extends Application {
 
         dialog.getDialogPane().setContent(grid);
         dialog.showAndWait();
+    }
+
+    private record MasterValueEdit(String shortText, String longText) {
+    }
+
+    private MasterValueEdit showMasterValueEditDialog(String category, String currentShortText) {
+        Dialog<MasterValueEdit> dialog = new Dialog<>();
+        dialog.setTitle(category + " bearbeiten");
+        dialog.setHeaderText("Aktuell ausgewählte(r) " + category);
+        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+
+        TextField shortField = new TextField(currentShortText);
+        TextArea longField = new TextArea(loadMasterDetailTextSafe(category, currentShortText));
+        longField.setWrapText(true);
+        longField.setPrefRowCount(6);
+        longField.setPrefWidth(320);
+
+        GridPane grid = new GridPane();
+        grid.setHgap(10);
+        grid.setVgap(8);
+        grid.setPadding(new Insets(10));
+        grid.add(new Label("Kurztext:"), 0, 0);
+        grid.add(shortField, 1, 0);
+        grid.add(new Label("Langtext:"), 0, 1);
+        grid.add(longField, 1, 1);
+
+        dialog.getDialogPane().setContent(grid);
+        dialog.setResultConverter(buttonType -> {
+            if (buttonType != ButtonType.OK) {
+                return null;
+            }
+            String next = shortField.getText() == null ? "" : shortField.getText().trim();
+            if (next.isBlank()) {
+                return null;
+            }
+            return new MasterValueEdit(next, longField.getText() == null ? "" : longField.getText());
+        });
+        return dialog.showAndWait().orElse(null);
     }
 
     private void openMasterDataRelationsDialog() {
@@ -1132,12 +1323,10 @@ public class GBUXMLApplication extends Application {
         tabPane.getTabs().clear();
         tabPane.getTabs().add(createGeneralTab());
         tabPane.getTabs().add(createOverviewTab());
-        if (!document.getTrades().isEmpty()) {
-            tabPane.getTabs().add(createStructureTab());
-            for (GbuXmlDocument.Trade trade : document.getTrades()) {
-                for (GbuXmlDocument.Area area : trade.getAreas()) {
-                    tabPane.getTabs().add(createAreaTab(trade, area));
-                }
+        tabPane.getTabs().add(createStructureTab());
+        for (GbuXmlDocument.Trade trade : document.getTrades()) {
+            for (GbuXmlDocument.Area area : trade.getAreas()) {
+                tabPane.getTabs().add(createAreaTab(trade, area));
             }
         }
 
@@ -1230,14 +1419,48 @@ public class GBUXMLApplication extends Application {
 
         VBox content = new VBox(12);
         content.setPadding(new Insets(12));
-        if (currentFile == null) {
-            content.getChildren().add(new Label("Die allgemeinen Angaben werden über Bearbeiten > Allgemein gepflegt."));
-        }
         content.getChildren().add(table);
+        content.getChildren().add(createContributorsEditor());
 
         Tab tab = new Tab("Allgemein");
         tab.setContent(content);
         return tab;
+    }
+
+    private VBox createContributorsEditor() {
+        ListView<String> contributorsList = new ListView<>(FXCollections.observableArrayList(document.getContributors()));
+        contributorsList.setPrefHeight(120);
+
+        TextField contributorField = new TextField();
+        contributorField.setPromptText("Mitwirkende Person");
+        Button addContributorButton = new Button("Hinzufügen");
+        Button removeContributorButton = new Button("Entfernen");
+
+        contributorField.setDisable(!editModeEnabled);
+        addContributorButton.setDisable(!editModeEnabled);
+        removeContributorButton.setDisable(!editModeEnabled);
+
+        addContributorButton.setOnAction(e -> {
+            String value = contributorField.getText() == null ? "" : contributorField.getText().trim();
+            if (value.isBlank() || contributorsList.getItems().contains(value)) {
+                return;
+            }
+            contributorsList.getItems().add(value);
+            document.addContributor(value);
+            contributorField.clear();
+        });
+        removeContributorButton.setOnAction(e -> {
+            String selected = contributorsList.getSelectionModel().getSelectedItem();
+            if (selected == null) {
+                return;
+            }
+            contributorsList.getItems().remove(selected);
+            document.removeContributor(selected);
+        });
+
+        Label label = new Label("Mitwirkende:");
+        label.setStyle("-fx-font-weight: bold;");
+        return new VBox(8, label, contributorsList, new HBox(8, contributorField, addContributorButton, removeContributorButton));
     }
 
     private boolean isDateKey(String key) {
@@ -1392,20 +1615,123 @@ public class GBUXMLApplication extends Application {
         return total;
     }
 
-    private void addNewHazardRow(GbuXmlDocument.Area area, TableView<AreaRow> table, boolean insertAbove) {
-        GbuXmlDocument.Process targetProcess = area.getProcesses().isEmpty() ? null : area.getProcesses().get(0);
+    private enum NewRowKind { PROCESS, HAZARD, MEASURE }
+
+    private void insertNewAreaRow(GbuXmlDocument.Area area, TableView<AreaRow> table, boolean insertAbove) {
+        AreaRow selected = table.getSelectionModel().getSelectedItem();
+        NewRowKind kind = askNewRowKind();
+        if (kind == null) {
+            return;
+        }
+        switch (kind) {
+            case PROCESS -> insertNewProcessRow(area, selected, insertAbove);
+            case HAZARD -> insertNewHazardRow(area, selected, insertAbove);
+            case MEASURE -> insertNewMeasureRow(area, selected, insertAbove);
+        }
+        table.setItems(buildAreaRows(area));
+    }
+
+    private NewRowKind askNewRowKind() {
+        ChoiceDialog<String> dialog = new ChoiceDialog<>("Neue Gefährdung", "Neuer Prozess", "Neue Gefährdung", "Neue Maßnahme");
+        dialog.setTitle("Neue Zeile einfügen");
+        dialog.setHeaderText("Was soll neu angelegt werden?");
+        dialog.setContentText("Art:");
+        return dialog.showAndWait().map(value -> switch (value) {
+            case "Neuer Prozess" -> NewRowKind.PROCESS;
+            case "Neue Gefährdung" -> NewRowKind.HAZARD;
+            case "Neue Maßnahme" -> NewRowKind.MEASURE;
+            default -> null;
+        }).orElse(null);
+    }
+
+    private int nextProcessId(GbuXmlDocument.Area area) {
+        int max = 0;
+        for (GbuXmlDocument.Process process : area.getProcesses()) {
+            max = Math.max(max, process.getProcessId());
+        }
+        return max + 1;
+    }
+
+    private int nextHazardNumber(GbuXmlDocument.Area area) {
+        int max = 0;
+        for (GbuXmlDocument.Process process : area.getProcesses()) {
+            for (GbuXmlDocument.Hazard hazard : process.getHazards()) {
+                max = Math.max(max, hazard.getHazardNumber());
+            }
+        }
+        return max + 1;
+    }
+
+    private void insertNewProcessRow(GbuXmlDocument.Area area, AreaRow selected, boolean insertAbove) {
+        GbuXmlDocument.Hazard placeholderHazard = new GbuXmlDocument.Hazard();
+        placeholderHazard.setHazardNumber(nextHazardNumber(area));
+        placeholderHazard.setHazardNameShort("Neue Gefährdung");
+        placeholderHazard.setRisk("Mittel");
+
+        GbuXmlDocument.Process newProcess = new GbuXmlDocument.Process();
+        newProcess.setProcessId(nextProcessId(area));
+        newProcess.setProcessNameShort("Neuer Prozess");
+        newProcess.addHazard(placeholderHazard);
+
+        GbuXmlDocument.Process referenceProcess = selected == null ? null : findProcessForAreaRow(area, selected);
+        int index = area.getProcesses().size();
+        if (referenceProcess != null) {
+            int referenceIndex = area.getProcesses().indexOf(referenceProcess);
+            if (referenceIndex >= 0) {
+                index = referenceIndex + (insertAbove ? 0 : 1);
+            }
+        }
+        area.getProcesses().add(index, newProcess);
+    }
+
+    private void insertNewHazardRow(GbuXmlDocument.Area area, AreaRow selected, boolean insertAbove) {
+        GbuXmlDocument.Process targetProcess = selected == null ? null : findProcessForAreaRow(area, selected);
+        if (targetProcess == null) {
+            targetProcess = area.getProcesses().isEmpty() ? null : area.getProcesses().get(area.getProcesses().size() - 1);
+        }
         if (targetProcess == null) {
             targetProcess = new GbuXmlDocument.Process();
-            targetProcess.setProcessName("Neuer Prozess");
+            targetProcess.setProcessId(nextProcessId(area));
+            targetProcess.setProcessNameShort("Neuer Prozess");
             area.addProcess(targetProcess);
         }
 
         GbuXmlDocument.Hazard newHazard = new GbuXmlDocument.Hazard();
-        newHazard.setHazardNumber(targetProcess.getHazards().size() + 1);
-        newHazard.setHazardName("Neue Gefährdung");
+        newHazard.setHazardNumber(nextHazardNumber(area));
+        newHazard.setHazardNameShort("Neue Gefährdung");
         newHazard.setRisk("Mittel");
-        targetProcess.addHazard(newHazard);
-        table.setItems(buildAreaRows(area));
+
+        List<GbuXmlDocument.Hazard> hazards = targetProcess.getHazards();
+        GbuXmlDocument.Hazard referenceHazard = selected == null ? null : findHazardForAreaRow(area, selected);
+        int index = hazards.size();
+        if (referenceHazard != null) {
+            int referenceIndex = hazards.indexOf(referenceHazard);
+            if (referenceIndex >= 0) {
+                index = referenceIndex + (insertAbove ? 0 : 1);
+            }
+        }
+        hazards.add(index, newHazard);
+    }
+
+    private void insertNewMeasureRow(GbuXmlDocument.Area area, AreaRow selected, boolean insertAbove) {
+        GbuXmlDocument.Hazard targetHazard = selected == null ? null : findHazardForAreaRow(area, selected);
+        if (targetHazard == null) {
+            showInfo("Bitte zuerst eine Zeile mit einer Gefährdung auswählen, der die neue Maßnahme zugeordnet werden soll.");
+            return;
+        }
+        GbuXmlDocument.Measure newMeasure = new GbuXmlDocument.Measure();
+        newMeasure.setMeasureTextShort("Neue Maßnahme");
+
+        List<GbuXmlDocument.Measure> measures = targetHazard.getMeasures();
+        GbuXmlDocument.Measure referenceMeasure = findMeasureForAreaRow(targetHazard, selected);
+        int index = measures.size();
+        if (referenceMeasure != null) {
+            int referenceIndex = measures.indexOf(referenceMeasure);
+            if (referenceIndex >= 0) {
+                index = referenceIndex + (insertAbove ? 0 : 1);
+            }
+        }
+        measures.add(index, newMeasure);
     }
 
     private void deleteSelectedAreaRow(GbuXmlDocument.Area area, TableView<AreaRow> table) {
@@ -1417,7 +1743,7 @@ public class GBUXMLApplication extends Application {
         for (GbuXmlDocument.Process process : area.getProcesses()) {
             for (int i = process.getHazards().size() - 1; i >= 0; i--) {
                 GbuXmlDocument.Hazard hazard = process.getHazards().get(i);
-                if (hazard.getHazardNumber() == selected.getHazardNumber() && hazard.getHazardName().equals(selected.getHazard())) {
+                if (hazard.getHazardNumber() == selected.getHazardNumber() && hazard.getHazardNameShort().equals(selected.getHazard())) {
                     Alert confirm = new Alert(Alert.AlertType.CONFIRMATION, "Gefährdung löschen?", ButtonType.OK, ButtonType.CANCEL);
                     confirm.setHeaderText("Sicherheitsabfrage");
                     if (confirm.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK) {
@@ -1483,13 +1809,13 @@ public class GBUXMLApplication extends Application {
                 TreeItem<StructureNode> areaItem = new TreeItem<>(new StructureNode(area.getAreaName().isBlank() ? "Bereich " + area.getAreaNumber() : area.getAreaName(), "area", area));
                 areaItem.setExpanded(true);
                 for (GbuXmlDocument.Process process : area.getProcesses()) {
-                    TreeItem<StructureNode> processItem = new TreeItem<>(new StructureNode(process.getProcessName().isBlank() ? "Prozess " + process.getProcessId() : process.getProcessName(), "process", process));
+                    TreeItem<StructureNode> processItem = new TreeItem<>(new StructureNode(process.getProcessNameShort().isBlank() ? "Prozess " + process.getProcessId() : process.getProcessNameShort(), "process", process));
                     processItem.setExpanded(true);
                     for (GbuXmlDocument.Hazard hazard : process.getHazards()) {
-                        TreeItem<StructureNode> hazardItem = new TreeItem<>(new StructureNode(hazard.getHazardName().isBlank() ? "Gefährdung " + hazard.getHazardNumber() : hazard.getHazardName(), "hazard", hazard));
+                        TreeItem<StructureNode> hazardItem = new TreeItem<>(new StructureNode(hazard.getHazardNameShort().isBlank() ? "Gefährdung " + hazard.getHazardNumber() : hazard.getHazardNameShort(), "hazard", hazard));
                         hazardItem.setExpanded(true);
                         for (GbuXmlDocument.Measure measure : hazard.getMeasures()) {
-                            hazardItem.getChildren().add(new TreeItem<>(new StructureNode(measure.getMeasureText().isBlank() ? "Maßnahme" : measure.getMeasureText(), "measure", measure)));
+                            hazardItem.getChildren().add(new TreeItem<>(new StructureNode(measure.getMeasureTextShort().isBlank() ? "Maßnahme" : measure.getMeasureTextShort(), "measure", measure)));
                         }
                         processItem.getChildren().add(hazardItem);
                     }
@@ -1633,7 +1959,7 @@ public class GBUXMLApplication extends Application {
     private void addProcess(GbuXmlDocument.Area area) {
         GbuXmlDocument.Process process = new GbuXmlDocument.Process();
         process.setProcessId(area.getProcesses().size() + 1);
-        process.setProcessName("Neuer Prozess");
+        process.setProcessNameShort("Neuer Prozess");
         area.addProcess(process);
         refreshTabs();
     }
@@ -1641,7 +1967,7 @@ public class GBUXMLApplication extends Application {
     private void addHazard(GbuXmlDocument.Process process) {
         GbuXmlDocument.Hazard hazard = new GbuXmlDocument.Hazard();
         hazard.setHazardNumber(process.getHazards().size() + 1);
-        hazard.setHazardName("Neue Gefährdung");
+        hazard.setHazardNameShort("Neue Gefährdung");
         hazard.setRisk("Mittel");
         process.addHazard(hazard);
         refreshTabs();
@@ -1649,7 +1975,7 @@ public class GBUXMLApplication extends Application {
 
     private void addMeasure(GbuXmlDocument.Hazard hazard) {
         GbuXmlDocument.Measure measure = new GbuXmlDocument.Measure();
-        measure.setMeasureText("Neue Maßnahme");
+        measure.setMeasureTextShort("Neue Maßnahme");
         hazard.addMeasure(measure);
         refreshTabs();
     }
@@ -1750,19 +2076,20 @@ public class GBUXMLApplication extends Application {
             Button addAbove = new Button("Neu oberhalb");
             Button addBelow = new Button("Neu unterhalb");
             Button deleteRow = new Button("Löschen");
-            addAbove.setOnAction(e -> addNewHazardRow(area, table, true));
-            addBelow.setOnAction(e -> addNewHazardRow(area, table, false));
+            addAbove.setOnAction(e -> insertNewAreaRow(area, table, true));
+            addBelow.setOnAction(e -> insertNewAreaRow(area, table, false));
             deleteRow.setOnAction(e -> deleteSelectedAreaRow(area, table));
             actions.getChildren().addAll(addAbove, addBelow, deleteRow);
 
             SplitPane content = new SplitPane(table, editorScroll);
             content.setPadding(new Insets(10));
             content.setDividerPositions(0.62);
-            content.setPrefHeight(700);
-            content.setMinHeight(400);
+            content.setMinHeight(300);
             String title = (trade.getTradeName().isEmpty() ? "Gewerk " + trade.getTradeNumber() : trade.getTradeName()) + " / " + area.getAreaName();
             Tab tab = new Tab(title);
-            tab.setContent(new VBox(8, actions, content));
+            VBox tabContent = new VBox(8, actions, content);
+            VBox.setVgrow(content, Priority.ALWAYS);
+            tab.setContent(tabContent);
             return tab;
         }
 
@@ -1779,6 +2106,7 @@ public class GBUXMLApplication extends Application {
             return;
         }
 
+        GbuXmlDocument.Process process = findProcessForAreaRow(area, selected);
         GbuXmlDocument.Hazard hazard = findHazardForAreaRow(area, selected);
         GbuXmlDocument.Measure measure = hazard == null ? null : findMeasureForAreaRow(hazard, selected);
 
@@ -1790,26 +2118,29 @@ public class GBUXMLApplication extends Application {
         form.setVgap(8);
         form.setPrefWidth(460);
 
-        TextArea processField = new TextArea(selected.getProcess());
-        processField.setWrapText(true);
-        processField.setPrefRowCount(3);
-        processField.setMinHeight(72);
-        processField.setPrefHeight(72);
+        TextField processShortField = new TextField(selected.getProcess());
+        TextArea processLongField = new TextArea(process == null ? "" : process.getProcessNameLong());
+        processLongField.setWrapText(true);
+        processLongField.setPrefRowCount(3);
+        processLongField.setMinHeight(72);
+        processLongField.setPrefHeight(72);
 
-        TextArea hazardField = new TextArea(selected.getHazard());
-        hazardField.setWrapText(true);
-        hazardField.setPrefRowCount(3);
-        hazardField.setMinHeight(72);
-        hazardField.setPrefHeight(72);
+        TextField hazardShortField = new TextField(selected.getHazard());
+        TextArea hazardLongField = new TextArea(hazard == null ? "" : hazard.getHazardNameLong());
+        hazardLongField.setWrapText(true);
+        hazardLongField.setPrefRowCount(3);
+        hazardLongField.setMinHeight(72);
+        hazardLongField.setPrefHeight(72);
 
         ComboBox<String> riskCombo = new ComboBox<>(FXCollections.observableArrayList(GbuXmlDocument.RISKS));
         riskCombo.setValue(hazard == null || hazard.getRisk().isBlank() ? "Mittel" : normalizeRiskValue(hazard.getRisk()));
 
-        TextArea measureField = new TextArea(measure == null ? selected.getMeasures() : measure.getMeasureText());
-        measureField.setWrapText(true);
-        measureField.setPrefRowCount(3);
-        measureField.setMinHeight(72);
-        measureField.setPrefHeight(72);
+        TextField measureShortField = new TextField(measure == null ? selected.getMeasures() : measure.getMeasureTextShort());
+        TextArea measureLongField = new TextArea(measure == null ? "" : measure.getMeasureTextLong());
+        measureLongField.setWrapText(true);
+        measureLongField.setPrefRowCount(3);
+        measureLongField.setMinHeight(72);
+        measureLongField.setPrefHeight(72);
 
         Button copyFromMasterButton = new Button("Kopieren aus Stamm");
         copyFromMasterButton.setOnAction(e -> {
@@ -1818,21 +2149,27 @@ public class GBUXMLApplication extends Application {
                 return;
             }
             if (selection.processes != null && !selection.processes.isEmpty()) {
-                processField.setText(String.join(System.lineSeparator(), selection.processes));
+                String value = selection.processes.get(0);
+                processShortField.setText(value);
+                processLongField.setText(loadMasterDetailTextSafe("Prozess", value));
             }
             if (selection.hazards != null && !selection.hazards.isEmpty()) {
-                hazardField.setText(String.join(System.lineSeparator(), selection.hazards));
+                String value = selection.hazards.get(0);
+                hazardShortField.setText(value);
+                hazardLongField.setText(loadMasterDetailTextSafe("Gefährdung", value));
             }
             if (selection.measures != null && !selection.measures.isEmpty()) {
-                measureField.setText(String.join(System.lineSeparator(), selection.measures));
+                String value = selection.measures.get(0);
+                measureShortField.setText(value);
+                measureLongField.setText(loadMasterDetailTextSafe("Maßnahme", value));
             }
         });
 
         Button copyToMasterButton = new Button("Kopieren zu Stamm");
         copyToMasterButton.setOnAction(e -> copyCurrentRowToMasterData(
-                processField.getText(),
-                hazardField.getText(),
-                measureField.getText()
+                processShortField.getText(), processLongField.getText(),
+                hazardShortField.getText(), hazardLongField.getText(),
+                measureShortField.getText(), measureLongField.getText()
         ));
 
         DatePicker dueDatePicker = new DatePicker();
@@ -1869,10 +2206,13 @@ public class GBUXMLApplication extends Application {
         approvalCombo.setValue((measure == null ? selected.getApproval() : measure.getApproval()));
 
         int row = 0;
-        form.add(createLabeledField("Prozess", processField), 0, row++);
-        form.add(createLabeledField("Gefährdung", hazardField), 0, row++);
+        form.add(createLabeledField("Prozess (Kurztext)", processShortField), 0, row++);
+        form.add(createLabeledField("Prozess (Langtext)", processLongField), 0, row++);
+        form.add(createLabeledField("Gefährdung (Kurztext)", hazardShortField), 0, row++);
+        form.add(createLabeledField("Gefährdung (Langtext)", hazardLongField), 0, row++);
         form.add(createLabeledField("Risiko", riskCombo), 0, row++);
-        form.add(createLabeledField("Maßnahme", measureField), 0, row++);
+        form.add(createLabeledField("Maßnahme (Kurztext)", measureShortField), 0, row++);
+        form.add(createLabeledField("Maßnahme (Langtext)", measureLongField), 0, row++);
         form.add(createLabeledField("Soll-Termin", dueDatePicker), 0, row++);
         form.add(createLabeledField("Verantwortlicher", responsibleCombo), 0, row++);
         form.add(createLabeledField("Ist-Termin", actualDatePicker), 0, row++);
@@ -1888,21 +2228,25 @@ public class GBUXMLApplication extends Application {
                     if (currentProcess.getHazards().size() > 1) {
                         GbuXmlDocument.Process rowProcess = new GbuXmlDocument.Process();
                         rowProcess.setProcessId(currentProcess.getProcessId());
-                        rowProcess.setProcessName(processField.getText() == null ? "" : processField.getText());
+                        rowProcess.setProcessNameShort(processShortField.getText() == null ? "" : processShortField.getText());
+                        rowProcess.setProcessNameLong(processLongField.getText() == null ? "" : processLongField.getText());
                         currentProcess.getHazards().remove(hazard);
                         rowProcess.addHazard(hazard);
                         if (currentProcess.getHazards().isEmpty()) {
                             area.getProcesses().remove(currentProcess);
                         }
                         area.getProcesses().add(rowProcess);
-                    } else if (!processField.getText().isBlank()) {
-                        currentProcess.setProcessName(processField.getText());
+                    } else if (!processShortField.getText().isBlank()) {
+                        currentProcess.setProcessNameShort(processShortField.getText());
+                        currentProcess.setProcessNameLong(processLongField.getText() == null ? "" : processLongField.getText());
                     }
                 }
-                hazard.setHazardName(hazardField.getText());
+                hazard.setHazardNameShort(hazardShortField.getText());
+                hazard.setHazardNameLong(hazardLongField.getText() == null ? "" : hazardLongField.getText());
                 hazard.setRisk(normalizeRiskValue(riskCombo.getValue()));
                 if (measure != null) {
-                    measure.setMeasureText(measureField.getText());
+                    measure.setMeasureTextShort(measureShortField.getText());
+                    measure.setMeasureTextLong(measureLongField.getText() == null ? "" : measureLongField.getText());
                     measure.setDueDate(dueDatePicker.getValue() == null ? "" : dueDatePicker.getValue().toString());
                     measure.setResponsible(responsibleCombo.getValue() == null ? "" : responsibleCombo.getValue());
                     measure.setActualDate(actualDatePicker.getValue() == null ? "" : actualDatePicker.getValue().toString());
@@ -1911,7 +2255,8 @@ public class GBUXMLApplication extends Application {
                     measure.setApproval(approvalCombo.getValue() == null ? "" : approvalCombo.getValue());
                 } else {
                     GbuXmlDocument.Measure newMeasure = new GbuXmlDocument.Measure();
-                    newMeasure.setMeasureText(measureField.getText());
+                    newMeasure.setMeasureTextShort(measureShortField.getText());
+                    newMeasure.setMeasureTextLong(measureLongField.getText() == null ? "" : measureLongField.getText());
                     newMeasure.setDueDate(dueDatePicker.getValue() == null ? "" : dueDatePicker.getValue().toString());
                     newMeasure.setResponsible(responsibleCombo.getValue() == null ? "" : responsibleCombo.getValue());
                     newMeasure.setActualDate(actualDatePicker.getValue() == null ? "" : actualDatePicker.getValue().toString());
@@ -2461,12 +2806,12 @@ public class GBUXMLApplication extends Application {
             case "process":
                 for (GbuXmlDocument.Process process : area.getProcesses()) {
                     if (process.getHazards().contains(hazard)) {
-                        process.setProcessName(newValue == null ? "" : newValue);
+                        process.setProcessNameShort(newValue == null ? "" : newValue);
                     }
                 }
                 break;
             case "hazard":
-                hazard.setHazardName(newValue == null ? "" : newValue);
+                hazard.setHazardNameShort(newValue == null ? "" : newValue);
                 break;
             case "risk":
                 hazard.setRisk(newValue == null ? "" : newValue);
@@ -2474,10 +2819,10 @@ public class GBUXMLApplication extends Application {
             case "measure":
                 GbuXmlDocument.Measure measure = findMeasureForAreaRow(hazard, row);
                 if (measure != null) {
-                    measure.setMeasureText(newValue == null ? "" : newValue);
+                    measure.setMeasureTextShort(newValue == null ? "" : newValue);
                 } else {
                     GbuXmlDocument.Measure created = new GbuXmlDocument.Measure();
-                    created.setMeasureText(newValue == null ? "" : newValue);
+                    created.setMeasureTextShort(newValue == null ? "" : newValue);
                     hazard.addMeasure(created);
                 }
                 break;
@@ -2523,7 +2868,7 @@ public class GBUXMLApplication extends Application {
         for (GbuXmlDocument.Process process : area.getProcesses()) {
             for (GbuXmlDocument.Hazard hazard : process.getHazards()) {
                 if (hazard.getHazardNumber() == row.getHazardNumber()) {
-                    if (row.getProcess() == null || row.getProcess().isBlank() || row.getProcess().equals(process.getProcessName())) {
+                    if (row.getProcess() == null || row.getProcess().isBlank() || row.getProcess().equals(process.getProcessNameShort())) {
                         return process;
                     }
                 }
@@ -2551,7 +2896,7 @@ public class GBUXMLApplication extends Application {
             return null;
         }
         for (GbuXmlDocument.Measure measure : hazard.getMeasures()) {
-            if (row.getMeasures() != null && !row.getMeasures().isBlank() && row.getMeasures().equals(measure.getMeasureText())) {
+            if (row.getMeasures() != null && !row.getMeasures().isBlank() && row.getMeasures().equals(measure.getMeasureTextShort())) {
                 return measure;
             }
         }
@@ -2606,18 +2951,11 @@ public class GBUXMLApplication extends Application {
         ObservableList<AreaRow> rows = FXCollections.observableArrayList();
         for (GbuXmlDocument.Process process : area.getProcesses()) {
             for (GbuXmlDocument.Hazard hazard : process.getHazards()) {
-                StringBuilder measuresBuilder = new StringBuilder();
-                for (GbuXmlDocument.Measure measure : hazard.getMeasures()) {
-                    if (measuresBuilder.length() > 0) {
-                        measuresBuilder.append(" | ");
-                    }
-                    measuresBuilder.append(measure.getMeasureText());
-                }
                 if (hazard.getMeasures().isEmpty()) {
                     rows.add(new AreaRow(
-                            process.getProcessName(),
+                            process.getProcessNameShort(),
                             hazard.getHazardNumber(),
-                            hazard.getHazardName(),
+                            hazard.getHazardNameShort(),
                             hazard.getRisk(),
                             "",
                             "",
@@ -2630,11 +2968,11 @@ public class GBUXMLApplication extends Application {
                 } else {
                     for (GbuXmlDocument.Measure measure : hazard.getMeasures()) {
                         rows.add(new AreaRow(
-                                process.getProcessName(),
+                                process.getProcessNameShort(),
                                 hazard.getHazardNumber(),
-                                hazard.getHazardName(),
+                                hazard.getHazardNameShort(),
                                 hazard.getRisk(),
-                                measure.getMeasureText(),
+                                measure.getMeasureTextShort(),
                                 measure.getDueDate(),
                                 measure.getResponsible(),
                                 measure.getActualDate(),
@@ -2667,12 +3005,15 @@ public class GBUXMLApplication extends Application {
     private String humanLabelForImportField(String key) {
         return switch (key) {
             case "AreaName" -> "Bereich";
-            case "ProcessName" -> "Prozess";
+            case "ProcessName" -> "Prozess (Kurztext)";
+            case "ProcessNameLong" -> "Prozess (Langtext)";
             case "ProcessAnnotation" -> "Prozess-Anmerkung";
             case "HazardNumber" -> "Gefährdungsnummer";
-            case "HazardName" -> "Gefährdung";
+            case "HazardName" -> "Gefährdung (Kurztext)";
+            case "HazardNameLong" -> "Gefährdung (Langtext)";
             case "Risk" -> "Risiko";
-            case "MeasureText" -> "Maßnahme";
+            case "MeasureText" -> "Maßnahme (Kurztext)";
+            case "MeasureTextLong" -> "Maßnahme (Langtext)";
             case "ActionNeeded" -> "Handlungsbedarf";
             case "DueDate" -> "Soll-Termin";
             case "Responsible" -> "Verantwortlicher";

@@ -28,26 +28,30 @@ import java.io.IOException;
 import java.nio.charset.Charset;
 import java.nio.charset.CharsetEncoder;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 public class PdfExportService {
     private static final float MARGIN = 36f;
-    private static final float PAGE_WIDTH = PDRectangle.A4.getWidth();
-    private static final float PAGE_HEIGHT = PDRectangle.A4.getHeight();
-    private static final float CONTENT_WIDTH = PAGE_WIDTH - (2 * MARGIN);
     private static final float ROW_PADDING = 4f;
     private static final float CELL_PADDING = 4f;
     private static final float LOGO_MAX_WIDTH = 120f;
     private static final float LOGO_MAX_HEIGHT = 45f;
 
-    public static void export(GbuXmlDocument document, File file) throws IOException {
+    public enum Orientation { PORTRAIT, LANDSCAPE }
+
+    public static void export(GbuXmlDocument document, File file, Orientation orientation) throws IOException {
         if (document == null) {
             throw new IOException("Keine Dokumentdaten für den PDF-Export vorhanden.");
         }
 
+        PDRectangle pageSize = orientation == Orientation.LANDSCAPE
+                ? new PDRectangle(PDRectangle.A4.getHeight(), PDRectangle.A4.getWidth())
+                : PDRectangle.A4;
+
         try (PDDocument pdf = new PDDocument()) {
-            PdfContext context = new PdfContext(pdf, safeText(document.getLogoPath()));
+            PdfContext context = new PdfContext(pdf, safeText(document.getLogoPath()), pageSize);
             context.startSectionPage("Allgemein");
             writeGeneralSection(context, document);
             context.startSectionPage("Auswertung");
@@ -68,7 +72,7 @@ public class PdfExportService {
             for (String contributor : document.getContributors()) {
                 contributorRows.add(List.of(new TableCellData(safeTextOrDash(contributor), 1)));
             }
-            context.drawTable(List.of(new TableColumnSpec("Name", CONTENT_WIDTH)), contributorRows, "#f8f9fb", "#ffffff");
+            context.drawTable(List.of(new TableColumnSpec("Name", context.getContentWidth())), contributorRows, "#f8f9fb", "#ffffff");
         }
     }
 
@@ -76,15 +80,15 @@ public class PdfExportService {
         context.drawSectionTitle("Auswertung");
         context.drawOverviewSummary(document);
 
-        List<TableColumnSpec> columns = List.of(
-                new TableColumnSpec("Bereich", 170f),
-                new TableColumnSpec("Gefährdungen", 70f),
-                new TableColumnSpec("hoch", 55f),
-                new TableColumnSpec("mittel", 55f),
-                new TableColumnSpec("gering", 55f),
-                new TableColumnSpec("offen", 55f),
-                new TableColumnSpec("erledigt", 55f)
-        );
+        LinkedHashMap<String, Float> fractions = new LinkedHashMap<>();
+        fractions.put("Bereich", 0.33f);
+        fractions.put("Gefährdungen", 0.136f);
+        fractions.put("hoch", 0.1068f);
+        fractions.put("mittel", 0.1068f);
+        fractions.put("gering", 0.1068f);
+        fractions.put("offen", 0.1068f);
+        fractions.put("erledigt", 0.1068f);
+        List<TableColumnSpec> columns = buildColumns(context.getContentWidth(), fractions);
         List<List<TableCellData>> rows = new ArrayList<>();
         for (GbuXmlDocument.Trade trade : document.getTrades()) {
             for (GbuXmlDocument.Area area : trade.getAreas()) {
@@ -121,17 +125,31 @@ public class PdfExportService {
         context.drawTable(columns, rows, "#eef4ff", "#ffffff");
     }
 
+    private static List<TableColumnSpec> buildColumns(float contentWidth, LinkedHashMap<String, Float> titleToFraction) {
+        List<TableColumnSpec> columns = new ArrayList<>();
+        float used = 0f;
+        int index = 0;
+        int count = titleToFraction.size();
+        for (Map.Entry<String, Float> entry : titleToFraction.entrySet()) {
+            index++;
+            float width = (index == count) ? (contentWidth - used) : Math.round(contentWidth * entry.getValue());
+            used += width;
+            columns.add(new TableColumnSpec(entry.getKey(), width));
+        }
+        return columns;
+    }
+
     private static void writeStructureSection(PdfContext context, GbuXmlDocument document) throws IOException {
         context.drawSpacer(16f);
         context.drawSubTitle("Struktur");
-        List<TableColumnSpec> columns = List.of(
-                new TableColumnSpec("Bereich", 110f),
-                new TableColumnSpec("Prozess", 110f),
-                new TableColumnSpec("Gefährdung", 110f),
-                new TableColumnSpec("Risiko", 50f),
-                new TableColumnSpec("Maßnahme", 150f),
-                new TableColumnSpec("Verantwortlich / Termin", 119f)
-        );
+        LinkedHashMap<String, Float> fractions = new LinkedHashMap<>();
+        fractions.put("Bereich", 0.17f);
+        fractions.put("Prozess", 0.17f);
+        fractions.put("Gefährdung", 0.17f);
+        fractions.put("Risiko", 0.077f);
+        fractions.put("Maßnahme", 0.2311f);
+        fractions.put("Verantwortlich / Termin", 0.1833f);
+        List<TableColumnSpec> columns = buildColumns(context.getContentWidth(), fractions);
         List<StructuredRow> rows = new ArrayList<>();
         for (GbuXmlDocument.Trade trade : document.getTrades()) {
             for (GbuXmlDocument.Area area : trade.getAreas()) {
@@ -151,7 +169,7 @@ public class PdfExportService {
                     if (process.getHazards().isEmpty()) {
                         rows.add(new StructuredRow(
                                 safeTextOrDash(area.getAreaName()),
-                                safeTextOrDash(process.getProcessName()),
+                                safeTextOrDash(process.getProcessNameShort()),
                                 "-",
                                 "-",
                                 "-",
@@ -164,8 +182,8 @@ public class PdfExportService {
                         if (hazard.getMeasures().isEmpty()) {
                             rows.add(new StructuredRow(
                                     safeTextOrDash(area.getAreaName()),
-                                    safeTextOrDash(process.getProcessName()),
-                                    safeTextOrDash(hazard.getHazardName()),
+                                    safeTextOrDash(process.getProcessNameShort()),
+                                    safeTextOrDash(hazard.getHazardNameShort()),
                                     safeTextOrDash(hazard.getRisk()),
                                     "-",
                                     "-",
@@ -176,10 +194,10 @@ public class PdfExportService {
                         for (GbuXmlDocument.Measure measure : hazard.getMeasures()) {
                             rows.add(new StructuredRow(
                                     safeTextOrDash(area.getAreaName()),
-                                    safeTextOrDash(process.getProcessName()),
-                                    safeTextOrDash(hazard.getHazardName()),
+                                    safeTextOrDash(process.getProcessNameShort()),
+                                    safeTextOrDash(hazard.getHazardNameShort()),
                                     safeTextOrDash(hazard.getRisk()),
-                                    safeTextOrDash(measure.getMeasureText()),
+                                    safeTextOrDash(measure.getMeasureTextShort()),
                                     buildResponsibilityCell(measure),
                                     "#ffffff"
                             ));
@@ -322,23 +340,35 @@ public class PdfExportService {
     private static final class PdfContext {
         private final PDDocument pdf;
         private final String logoPath;
+        private final PDRectangle pageSize;
+        private final float pageWidth;
+        private final float pageHeight;
+        private final float contentWidth;
         private PDPage page;
         private PDPageContentStream stream;
         private float y;
 
-        private PdfContext(PDDocument pdf, String logoPath) {
+        private PdfContext(PDDocument pdf, String logoPath, PDRectangle pageSize) {
             this.pdf = pdf;
             this.logoPath = logoPath;
+            this.pageSize = pageSize;
+            this.pageWidth = pageSize.getWidth();
+            this.pageHeight = pageSize.getHeight();
+            this.contentWidth = pageWidth - (2 * MARGIN);
+        }
+
+        private float getContentWidth() {
+            return contentWidth;
         }
 
         private void startSectionPage(String title) throws IOException {
             if (stream != null) {
                 stream.close();
             }
-            page = new PDPage(PDRectangle.A4);
+            page = new PDPage(pageSize);
             pdf.addPage(page);
             stream = new PDPageContentStream(pdf, page);
-            y = PAGE_HEIGHT - MARGIN;
+            y = pageHeight - MARGIN;
             drawHeader(title);
         }
 
@@ -346,7 +376,7 @@ public class PdfExportService {
             drawText(title, MARGIN, y, 18f, true);
             drawLogo();
             y -= 28f;
-            drawLine(MARGIN, y, PAGE_WIDTH - MARGIN, y, 0.8f);
+            drawLine(MARGIN, y, pageWidth - MARGIN, y, 0.8f);
             y -= 18f;
         }
 
@@ -365,7 +395,7 @@ public class PdfExportService {
             scale = Math.min(scale, 1f);
             float drawWidth = width * scale;
             float drawHeight = height * scale;
-            stream.drawImage(image, PAGE_WIDTH - MARGIN - drawWidth, PAGE_HEIGHT - MARGIN - drawHeight + 8f, drawWidth, drawHeight);
+            stream.drawImage(image, pageWidth - MARGIN - drawWidth, pageHeight - MARGIN - drawHeight + 8f, drawWidth, drawHeight);
         }
 
         private void drawSectionTitle(String title) throws IOException {
@@ -389,7 +419,7 @@ public class PdfExportService {
                     new SummaryCell("erledigte Maßnahmen", String.valueOf(countClosedMeasures(document)), "#e9f7ea", false)
             );
             float gap = 8f;
-            float width = (CONTENT_WIDTH - (gap * (cells.size() - 1))) / cells.size();
+            float width = (contentWidth - (gap * (cells.size() - 1))) / cells.size();
             float height = 48f;
             ensureSpace(height + 10f);
             float x = MARGIN;
@@ -404,9 +434,10 @@ public class PdfExportService {
         }
 
         private void drawKeyValueTable(Map<String, String> values) throws IOException {
+            float fieldWidth = Math.min(180f, contentWidth * 0.4f);
             List<TableColumnSpec> columns = List.of(
-                    new TableColumnSpec("Feld", 180f),
-                    new TableColumnSpec("Wert", CONTENT_WIDTH - 180f)
+                    new TableColumnSpec("Feld", fieldWidth),
+                    new TableColumnSpec("Wert", contentWidth - fieldWidth)
             );
             List<List<TableCellData>> rows = new ArrayList<>();
             for (Map.Entry<String, String> entry : values.entrySet()) {
@@ -424,7 +455,7 @@ public class PdfExportService {
             for (List<TableCellData> row : rows) {
                 float rowHeight = calculateRowHeight(columns, row);
                 ensureSpace(rowHeight);
-                fillRect(MARGIN, y - rowHeight, CONTENT_WIDTH, rowHeight, alternate ? "#f8fbff" : defaultRowColor);
+                fillRect(MARGIN, y - rowHeight, contentWidth, rowHeight, alternate ? "#f8fbff" : defaultRowColor);
                 drawRow(columns, row, rowHeight);
                 y -= rowHeight;
                 alternate = !alternate;
@@ -447,7 +478,7 @@ public class PdfExportService {
                 );
                 float rowHeight = calculateRowHeight(columns, cells);
                 ensureSpace(rowHeight);
-                fillRect(MARGIN, y - rowHeight, CONTENT_WIDTH, rowHeight, row.backgroundColor());
+                fillRect(MARGIN, y - rowHeight, contentWidth, rowHeight, row.backgroundColor());
                 if (!row.area().equals(lastArea)) {
                     fillRect(MARGIN, y - rowHeight, columns.get(0).width(), rowHeight, "#dcecff");
                 }
@@ -467,7 +498,7 @@ public class PdfExportService {
 
         private void drawTableHeader(List<TableColumnSpec> columns, String color) throws IOException {
             ensureSpace(22f);
-            fillRect(MARGIN, y - 22f, CONTENT_WIDTH, 22f, color);
+            fillRect(MARGIN, y - 22f, contentWidth, 22f, color);
             float x = MARGIN;
             for (TableColumnSpec column : columns) {
                 drawRect(x, y - 22f, column.width(), 22f, "#8a94a6", 0.7f);

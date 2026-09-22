@@ -94,7 +94,8 @@ public class XmlFileService {
                                 }
                                 GbuXmlDocument.Process process = new GbuXmlDocument.Process();
                                 process.setProcessId(readInt(getChildText(processElement, "ProcessId")));
-                                process.setProcessName(getChildText(processElement, "ProcessName"));
+                                process.setProcessNameShort(getChildText(processElement, "ProcessNameShort"));
+                                process.setProcessNameLong(getChildText(processElement, "ProcessNameLong"));
                                 process.setAnnotation(getChildText(processElement, "Annotation"));
 
                                 Element hazardsElement = getChildElement(processElement, "Hazards");
@@ -105,7 +106,8 @@ public class XmlFileService {
                                         }
                                         GbuXmlDocument.Hazard hazard = new GbuXmlDocument.Hazard();
                                         hazard.setHazardNumber(readInt(getChildText(hazardElement, "HazardNumber")));
-                                        hazard.setHazardName(getChildText(hazardElement, "HazardName"));
+                                        hazard.setHazardNameShort(getChildText(hazardElement, "HazardNameShort"));
+                                        hazard.setHazardNameLong(getChildText(hazardElement, "HazardNameLong"));
                                         hazard.setRisk(getChildText(hazardElement, "Risk"));
 
                                         Element measuresElement = getChildElement(hazardElement, "Measures");
@@ -115,7 +117,8 @@ public class XmlFileService {
                                                     continue;
                                                 }
                                                 GbuXmlDocument.Measure measure = new GbuXmlDocument.Measure();
-                                                measure.setMeasureText(getChildText(measureElement, "MeasureText"));
+                                                measure.setMeasureTextShort(getChildText(measureElement, "MeasureTextShort"));
+                                                measure.setMeasureTextLong(getChildText(measureElement, "MeasureTextLong"));
                                                 measure.setActionNeeded(Boolean.parseBoolean(getChildText(measureElement, "ActionNeeded")));
                                                 measure.setDueDate(getChildText(measureElement, "DueDate"));
                                                 measure.setResponsible(getChildText(measureElement, "Responsible"));
@@ -186,20 +189,23 @@ public class XmlFileService {
                 for (GbuXmlDocument.Process process : area.getProcesses()) {
                     Element processElement = documentXml.createElement("Process");
                     processElement.appendChild(createTextElement(documentXml, "ProcessId", String.valueOf(process.getProcessId())));
-                    processElement.appendChild(createTextElement(documentXml, "ProcessName", process.getProcessName()));
+                    processElement.appendChild(createTextElement(documentXml, "ProcessNameShort", process.getProcessNameShort()));
+                    processElement.appendChild(createTextElement(documentXml, "ProcessNameLong", process.getProcessNameLong()));
                     processElement.appendChild(createTextElement(documentXml, "Annotation", process.getAnnotation()));
 
                     Element hazardsElement = documentXml.createElement("Hazards");
                     for (GbuXmlDocument.Hazard hazard : process.getHazards()) {
                         Element hazardElement = documentXml.createElement("Hazard");
                         hazardElement.appendChild(createTextElement(documentXml, "HazardNumber", String.valueOf(hazard.getHazardNumber())));
-                        hazardElement.appendChild(createTextElement(documentXml, "HazardName", hazard.getHazardName()));
+                        hazardElement.appendChild(createTextElement(documentXml, "HazardNameShort", hazard.getHazardNameShort()));
+                        hazardElement.appendChild(createTextElement(documentXml, "HazardNameLong", hazard.getHazardNameLong()));
                         hazardElement.appendChild(createTextElement(documentXml, "Risk", hazard.getRisk()));
 
                         Element measuresElement = documentXml.createElement("Measures");
                         for (GbuXmlDocument.Measure measure : hazard.getMeasures()) {
                             Element measureElement = documentXml.createElement("Measure");
-                            measureElement.appendChild(createTextElement(documentXml, "MeasureText", measure.getMeasureText()));
+                            measureElement.appendChild(createTextElement(documentXml, "MeasureTextShort", measure.getMeasureTextShort()));
+                            measureElement.appendChild(createTextElement(documentXml, "MeasureTextLong", measure.getMeasureTextLong()));
                             measureElement.appendChild(createTextElement(documentXml, "ActionNeeded", String.valueOf(measure.isActionNeeded())));
                             measureElement.appendChild(createTextElement(documentXml, "DueDate", measure.getDueDate()));
                             measureElement.appendChild(createTextElement(documentXml, "Responsible", measure.getResponsible()));

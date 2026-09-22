@@ -177,7 +177,7 @@ Wer die Software einfach nutzen möchte, ohne selbst zu bauen, findet fertige In
 
 Jede dieser Dateien enthält eine eigene, gebündelte Java-Runtime; es muss keine Java-Umgebung separat installiert werden.
 
-Die Installationspakete werden automatisch von GitHub Actions (`.github/workflows/release.yml`) gebaut, sobald ein Git-Tag im Format `vX.Y.Z` (z. B. `v1.0.0`) gepusht wird. Der Workflow baut parallel auf Windows-, macOS- und Linux-Runnern mit `jpackage` und veröffentlicht die drei Installer als Anhänge des zugehörigen GitHub Release.
+Die Installationspakete werden automatisch von GitHub Actions (`.github/workflows/release.yml`) gebaut, sobald ein Git-Tag im Format `vX.Y.Z` (z. B. `v1.1.0`) gepusht wird. Der Workflow baut parallel auf Windows-, macOS- und Linux-Runnern mit `jpackage` und veröffentlicht die drei Installer als Anhänge des zugehörigen GitHub Release.
 
 ## Lizenz
 

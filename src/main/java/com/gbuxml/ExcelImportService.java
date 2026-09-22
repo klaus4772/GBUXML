@@ -32,6 +32,7 @@ import java.util.Set;
 
 public class ExcelImportService {
     private static final DataFormatter FORMATTER = new DataFormatter();
+    private static final int SHORT_TEXT_MAX_LENGTH = 60;
 
     public static WorkbookData readWorkbook(InputStream inputStream) throws Exception {
         try (Workbook workbook = new XSSFWorkbook(inputStream)) {
@@ -84,9 +85,12 @@ public class ExcelImportService {
                         continue;
                     }
 
-                    String processName = getCellValue(row, indices.get("ProcessName"));
-                    String hazardName = getCellValue(row, indices.get("HazardName"));
-                    String measureText = getCellValue(row, indices.get("MeasureText"));
+                    String processNameLong = getCellValue(row, indices.get("ProcessNameLong"));
+                    String processName = resolveShortText(getCellValue(row, indices.get("ProcessName")), processNameLong);
+                    String hazardNameLong = getCellValue(row, indices.get("HazardNameLong"));
+                    String hazardName = resolveShortText(getCellValue(row, indices.get("HazardName")), hazardNameLong);
+                    String measureTextLong = getCellValue(row, indices.get("MeasureTextLong"));
+                    String measureText = resolveShortText(getCellValue(row, indices.get("MeasureText")), measureTextLong);
                     String risk = getCellValue(row, indices.get("Risk"));
                     String areaName = config.sheetRepresentsAreas() ? sheetName : getCellValue(row, indices.get("AreaName"));
                     if (!config.sheetRepresentsAreas() && !areaName.isBlank()) {
@@ -102,7 +106,8 @@ public class ExcelImportService {
                     if (process == null) {
                         process = new GbuXmlDocument.Process();
                         process.setProcessId(processId++);
-                        process.setProcessName(processName);
+                        process.setProcessNameShort(processName);
+                        process.setProcessNameLong(processNameLong);
                         process.setAnnotation(getCellValue(row, indices.get("ProcessAnnotation")));
                         area.addProcess(process);
                         processesByName.put(processKey, process);
@@ -110,11 +115,13 @@ public class ExcelImportService {
 
                     GbuXmlDocument.Hazard hazard = new GbuXmlDocument.Hazard();
                     hazard.setHazardNumber(parseInt(getCellValue(row, indices.get("HazardNumber")), process.getHazards().size() + 1));
-                    hazard.setHazardName(hazardName);
+                    hazard.setHazardNameShort(hazardName);
+                    hazard.setHazardNameLong(hazardNameLong);
                     hazard.setRisk(risk);
 
                     GbuXmlDocument.Measure measure = new GbuXmlDocument.Measure();
-                    measure.setMeasureText(measureText);
+                    measure.setMeasureTextShort(measureText);
+                    measure.setMeasureTextLong(measureTextLong);
                     measure.setDueDate(getCellValue(row, indices.get("DueDate")));
                     measure.setResponsible(getCellValue(row, indices.get("Responsible")));
                     measure.setActualDate(getCellValue(row, indices.get("ActualDate")));
@@ -215,6 +222,25 @@ public class ExcelImportService {
     private static boolean parseBoolean(String value) {
         String normalized = value == null ? "" : value.trim().toLowerCase();
         return "true".equals(normalized) || "ja".equals(normalized) || "x".equals(normalized) || "1".equals(normalized);
+    }
+
+    private static String resolveShortText(String shortValue, String longValue) {
+        if (shortValue != null && !shortValue.isBlank()) {
+            return shortValue;
+        }
+        if (longValue == null || longValue.isBlank()) {
+            return "";
+        }
+        String trimmed = longValue.trim();
+        if (trimmed.length() <= SHORT_TEXT_MAX_LENGTH) {
+            return trimmed;
+        }
+        String truncated = trimmed.substring(0, SHORT_TEXT_MAX_LENGTH);
+        int lastSpace = truncated.lastIndexOf(' ');
+        if (lastSpace > SHORT_TEXT_MAX_LENGTH / 2) {
+            truncated = truncated.substring(0, lastSpace);
+        }
+        return truncated.trim();
     }
 
     public record WorkbookData(List<String> sheetNames, Map<String, List<String>> columnsBySheet) {

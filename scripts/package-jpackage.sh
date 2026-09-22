@@ -52,7 +52,7 @@ fi
 "$JPACKAGE_BIN" \
   --type app-image \
   --name GBUXML \
-  --app-version 1.0.0 \
+  --app-version 1.1.0 \
   --vendor GBUXML \
   --input "$STAGING_DIR" \
   --main-jar "$JAR_NAME" \

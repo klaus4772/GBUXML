@@ -23,16 +23,19 @@
                     <Processes>
                         <Process>
                             <ProcessId>101</ProcessId>
-                            <ProcessName>Gerüst aufstellen</ProcessName>
+                            <ProcessNameShort>Gerüst aufstellen</ProcessNameShort>
+                            <ProcessNameLong>Gerüst aufstellen</ProcessNameLong>
                             <Annotation>Arbeiten in Höhe</Annotation>
                             <Hazards>
                                 <Hazard>
                                     <HazardNumber>1</HazardNumber>
-                                    <HazardName>Sturz</HazardName>
+                                    <HazardNameShort>Sturz</HazardNameShort>
+                                    <HazardNameLong>Sturz</HazardNameLong>
                                     <Risk>Hoch</Risk>
                                     <Measures>
                                         <Measure>
-                                            <MeasureText>Absicherung mit Geländer</MeasureText>
+                                            <MeasureTextShort>Absicherung mit Geländer</MeasureTextShort>
+                                            <MeasureTextLong>Absicherung mit Geländer</MeasureTextLong>
                                             <ActionNeeded>true</ActionNeeded>
                                             <DueDate>2026-02-15</DueDate>
                                             <Responsible>Baustellenleiter</Responsible>
@@ -52,16 +55,19 @@
                     <Processes>
                         <Process>
                             <ProcessId>201</ProcessId>
-                            <ProcessName>Gerüst abbauen</ProcessName>
+                            <ProcessNameShort>Gerüst abbauen</ProcessNameShort>
+                            <ProcessNameLong>Gerüst abbauen</ProcessNameLong>
                             <Annotation>Arbeiten in Höhe</Annotation>
                             <Hazards>
                                 <Hazard>
                                     <HazardNumber>2</HazardNumber>
-                                    <HazardName>Quetschung</HazardName>
+                                    <HazardNameShort>Quetschung</HazardNameShort>
+                                    <HazardNameLong>Quetschung</HazardNameLong>
                                     <Risk>Mittel</Risk>
                                     <Measures>
                                         <Measure>
-                                            <MeasureText>Schutzhelm und Handzeichen</MeasureText>
+                                            <MeasureTextShort>Schutzhelm und Handzeichen</MeasureTextShort>
+                                            <MeasureTextLong>Schutzhelm und Handzeichen</MeasureTextLong>
                                             <ActionNeeded>false</ActionNeeded>
                                             <DueDate>2026-02-20</DueDate>
                                             <Responsible>Techniker</Responsible>
