@@ -252,7 +252,7 @@ Hinweis: Ein echter Windows-Installer (`.exe`/`.msi`) benötigt zusätzlich WiX.
 
 - `src/main/resources/gbuxml.xsd` – XML-Schema
 - `src/main/resources/sample-gbuxml.xml` – generisches Beispiel-Datei
-- `src/main/resources/sample-soll-geruestbau-gbuxml.xml` – Beispiel aus der Excel-Datei `Söll Gerüstbau Gefährdungsbeurteilung.xlsx`, soweit im XML-Format abgebildet
+- `src/main/resources/sample-geruestbau-gbuxml.xml` – Beispiel aus der Excel-Datei `Söll Gerüstbau Gefährdungsbeurteilung.xlsx`, soweit im XML-Format abgebildet
 - `src/main/java/com/gbuxml/GBUXMLApplication.java` – GUI-Viewer
 - `src/main/java/com/gbuxml/PdfExportService.java` – PDF-Export für Druck und Ausdruck
 - `pom.xml` – Java 21 + JavaFX + JAXB + SQLite + PDFBox-Konfiguration

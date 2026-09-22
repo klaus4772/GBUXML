@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <GBUXML>
     <GeneralData>
-        <Firmenname>Söll Gerüstbau</Firmenname>
+        <Firmenname>Gerüstbau</Firmenname>
         <StrasseHausnummer>Musterstraße 12</StrasseHausnummer>
         <PLZ>12345</PLZ>
         <Ort>Musterstadt</Ort>
@@ -14,7 +14,7 @@
     <Trades>
         <Trade>
             <TradeNo>1</TradeNo>
-            <TradeName>Söll Gerüstbau</TradeName>
+            <TradeName>Gerüstbau</TradeName>
             <Areas>
                 <Area>
                     <AreaNo>1</AreaNo>
