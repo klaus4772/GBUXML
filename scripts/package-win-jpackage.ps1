@@ -58,7 +58,7 @@ $cmdArgs = @(
     "--vendor", "GBUXML",
     "--input", $stagingDir,
     "--main-jar", $jarName,
-    "--main-class", "com.gbuxml.GBUXMLApplication",
+    "--main-class", "com.gbuxml.GBUXMLLauncher",
     "--dest", $distDir
 )
 

@@ -243,7 +243,7 @@ Zusätzlich werden auch portable ZIP-Dateien erzeugt, z. B.:
 Für ein direktes jpackage-Beispiel ohne Maven:
 
 ```powershell
-C:\Program Files\Java\jdk-21.0.12\bin\jpackage.exe --type app-image --name GBUXML --app-version 1.0 --vendor "GBUXML" --input target --main-jar GBUXML-1.0-SNAPSHOT.jar --main-class com.gbuxml.GBUXMLApplication --dest target\jpackage\windows
+C:\Program Files\Java\jdk-21.0.12\bin\jpackage.exe --type app-image --name GBUXML --app-version 1.0 --vendor "GBUXML" --input target --main-jar GBUXML-1.0-SNAPSHOT.jar --main-class com.gbuxml.GBUXMLLauncher --dest target\jpackage\windows
 ```
 
 Hinweis: Ein echter Windows-Installer (`.exe`/`.msi`) benötigt zusätzlich WiX. Für einfache Verteilung ist das automatische `app-image`-Paket mit ZIP-Datei die beste und unkomplizierteste Lösung.

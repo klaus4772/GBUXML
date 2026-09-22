@@ -94,7 +94,7 @@ jobs:
             --vendor GBUXML \
             --input staging \
             --main-jar "${{ steps.stage.outputs.jar_name }}" \
-            --main-class com.gbuxml.GBUXMLApplication \
+            --main-class com.gbuxml.GBUXMLLauncher \
             --dest dist/installer \
             "${EXTRA_ARGS[@]}"
 
