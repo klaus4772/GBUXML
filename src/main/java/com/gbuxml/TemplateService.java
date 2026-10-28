@@ -15,72 +15,82 @@
  */
 package com.gbuxml;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.stream.Stream;
 
 /**
- * Stores and loads reusable Gefährdungsbeurteilung templates ("Vorlagen") as GBUXML files
- * in a dedicated directory, independent of the file the user last opened or saved.
+ * Stores reusable GBUXML templates in the configured database.
  */
 public class TemplateService {
-    private final Path templatesDir;
+    private final DatabaseService databaseService;
+    private final Path legacyTemplatesDir;
 
     public TemplateService() {
-        this(Paths.get(System.getProperty("user.home"), ".gbuxml", "templates"));
+        this(DatabaseService.defaultDatabase());
     }
 
-    public TemplateService(Path templatesDir) {
-        this.templatesDir = templatesDir;
-        try {
-            Files.createDirectories(templatesDir);
-        } catch (IOException ignored) {
-        }
+    public TemplateService(DatabaseService databaseService) {
+        this(databaseService, Paths.get(System.getProperty("user.home"), ".gbuxml", "templates"));
     }
 
-    public List<String> listTemplateNames() throws IOException {
-        List<String> names = new ArrayList<>();
-        if (!Files.isDirectory(templatesDir)) {
-            return names;
-        }
-        try (Stream<Path> files = Files.list(templatesDir)) {
-            files.filter(path -> path.getFileName().toString().toLowerCase().endsWith(".xml"))
-                    .forEach(path -> {
-                        String fileName = path.getFileName().toString();
-                        names.add(fileName.substring(0, fileName.length() - 4));
-                    });
-        }
-        Collections.sort(names, String.CASE_INSENSITIVE_ORDER);
-        return names;
+    TemplateService(DatabaseService databaseService, Path legacyTemplatesDir) {
+        this.databaseService = databaseService;
+        this.legacyTemplatesDir = legacyTemplatesDir;
+    }
+
+    public List<String> listTemplateNames() throws Exception {
+        importLegacyTemplates();
+        return databaseService.loadTemplateNames();
     }
 
     public void saveTemplate(String name, GbuXmlDocument document) throws Exception {
-        Path target = templatesDir.resolve(sanitizeFileName(name) + ".xml");
-        try (OutputStream outputStream = Files.newOutputStream(target)) {
-            XmlFileService.save(document, outputStream);
-        }
+        String normalizedName = normalizeName(name);
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        XmlFileService.save(document, output);
+        databaseService.saveTemplate(normalizedName, output.toString(StandardCharsets.UTF_8));
     }
 
     public GbuXmlDocument loadTemplate(String name) throws Exception {
-        Path source = templatesDir.resolve(sanitizeFileName(name) + ".xml");
-        try (InputStream inputStream = Files.newInputStream(source)) {
-            return XmlFileService.load(inputStream);
+        String content = databaseService.loadTemplate(normalizeName(name));
+        if (content == null) {
+            throw new IOException("Die Vorlage wurde nicht in der Datenbank gefunden.");
+        }
+        return XmlFileService.load(new ByteArrayInputStream(content.getBytes(StandardCharsets.UTF_8)));
+    }
+
+    public boolean templateExists(String name) throws Exception {
+        importLegacyTemplates();
+        return databaseService.templateExists(normalizeName(name));
+    }
+
+    private void importLegacyTemplates() throws Exception {
+        if (!Files.isDirectory(legacyTemplatesDir)) {
+            return;
+        }
+        try (Stream<Path> files = Files.list(legacyTemplatesDir)) {
+            for (Path path : files.filter(file -> Files.isRegularFile(file)
+                    && file.getFileName().toString().toLowerCase().endsWith(".xml")).toList()) {
+                String fileName = path.getFileName().toString();
+                String name = fileName.substring(0, fileName.length() - 4).trim();
+                if (!name.isEmpty() && !databaseService.templateExists(name)) {
+                    databaseService.saveTemplate(name, Files.readString(path, StandardCharsets.UTF_8));
+                }
+            }
         }
     }
 
-    public boolean templateExists(String name) {
-        return Files.isRegularFile(templatesDir.resolve(sanitizeFileName(name) + ".xml"));
-    }
-
-    private String sanitizeFileName(String name) {
-        String trimmed = name == null ? "" : name.trim();
-        return trimmed.replaceAll("[\\\\/:*?\"<>|]", "_");
+    private String normalizeName(String name) {
+        String normalized = name == null ? "" : name.trim();
+        if (normalized.isEmpty()) {
+            throw new IllegalArgumentException("Der Vorlagenname darf nicht leer sein.");
+        }
+        return normalized;
     }
 }

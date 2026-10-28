@@ -219,6 +219,7 @@ Die Anwendung verwendet SQLite als lokale Datenbank unter:
 ```
 
 Dort werden Stammdaten für Kategorien wie Gewerke, Bereiche, Prozesse, Gefährdungen und Maßnahmen gespeichert.
+Wiederverwendbare Gefährdungsbeurteilungs-Vorlagen werden ebenfalls in dieser Datenbank gespeichert; ältere Vorlagen aus dem bisherigen Vorlagenordner werden beim ersten Auflisten übernommen.
 
 ## jpackage für Portable-Distributionen
 

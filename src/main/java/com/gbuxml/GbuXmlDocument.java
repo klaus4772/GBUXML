@@ -125,6 +125,17 @@ public class GbuXmlDocument {
         public void setAnnotation(String annotation) { this.annotation = annotation == null ? "" : annotation; }
         public List<Hazard> getHazards() { return hazards; }
         public void addHazard(Hazard hazard) { hazards.add(hazard); }
+        public Process copy() {
+            Process copy = new Process();
+            copy.setProcessId(this.processId);
+            copy.setProcessNameShort(this.processNameShort);
+            copy.setProcessNameLong(this.processNameLong);
+            copy.setAnnotation(this.annotation);
+            for (Hazard hazard : this.hazards) {
+                copy.addHazard(hazard.copy());
+            }
+            return copy;
+        }
     }
 
     public static class Hazard {
@@ -144,6 +155,17 @@ public class GbuXmlDocument {
         public void setRisk(String risk) { this.risk = risk == null ? "" : risk; }
         public List<Measure> getMeasures() { return measures; }
         public void addMeasure(Measure measure) { measures.add(measure); }
+        public Hazard copy() {
+            Hazard copy = new Hazard();
+            copy.setHazardNumber(this.hazardNumber);
+            copy.setHazardNameShort(this.hazardNameShort);
+            copy.setHazardNameLong(this.hazardNameLong);
+            copy.setRisk(this.risk);
+            for (Measure measure : this.measures) {
+                copy.addMeasure(measure.copy());
+            }
+            return copy;
+        }
     }
 
     public static class Measure {
@@ -175,6 +197,19 @@ public class GbuXmlDocument {
         public void setEffectivenessControl(String effectivenessControl) { this.effectivenessControl = effectivenessControl == null ? "" : effectivenessControl; }
         public String getApproval() { return approval; }
         public void setApproval(String approval) { this.approval = approval == null ? "" : approval; }
+        public Measure copy() {
+            Measure copy = new Measure();
+            copy.setMeasureTextShort(this.measureTextShort);
+            copy.setMeasureTextLong(this.measureTextLong);
+            copy.setActionNeeded(this.actionNeeded);
+            copy.setDueDate(this.dueDate);
+            copy.setResponsible(this.responsible);
+            copy.setActualDate(this.actualDate);
+            copy.setConfirmation(this.confirmation);
+            copy.setEffectivenessControl(this.effectivenessControl);
+            copy.setApproval(this.approval);
+            return copy;
+        }
     }
 
     public static GbuXmlDocument emptyDocument() {

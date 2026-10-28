@@ -58,6 +58,7 @@ public class DatabaseService {
             statement.executeUpdate("CREATE TABLE IF NOT EXISTS master_data (" + idColumn + ", category TEXT NOT NULL, label TEXT NOT NULL, detail_text TEXT NOT NULL DEFAULT '', UNIQUE(category, label));");
             statement.executeUpdate("CREATE TABLE IF NOT EXISTS master_process_hazard (process_id INTEGER NOT NULL, hazard_id INTEGER NOT NULL, PRIMARY KEY(process_id, hazard_id), FOREIGN KEY(process_id) REFERENCES master_data(id) ON DELETE CASCADE, FOREIGN KEY(hazard_id) REFERENCES master_data(id) ON DELETE CASCADE);");
             statement.executeUpdate("CREATE TABLE IF NOT EXISTS master_hazard_measure (hazard_id INTEGER NOT NULL, measure_id INTEGER NOT NULL, PRIMARY KEY(hazard_id, measure_id), FOREIGN KEY(hazard_id) REFERENCES master_data(id) ON DELETE CASCADE, FOREIGN KEY(measure_id) REFERENCES master_data(id) ON DELETE CASCADE);");
+            statement.executeUpdate("CREATE TABLE IF NOT EXISTS templates (name TEXT PRIMARY KEY, xml_content TEXT NOT NULL);");
             try {
                 statement.executeUpdate("ALTER TABLE master_data ADD COLUMN detail_text TEXT NOT NULL DEFAULT ''");
             } catch (SQLException alreadyExists) {
@@ -139,6 +140,122 @@ public class DatabaseService {
                     statement.setString(3, value.trim());
                     statement.executeUpdate();
                 }
+            }
+        }
+    }
+
+    public void saveMasterDataSet(String processShort, String processLong, String hazardShort, String hazardLong,
+                                  String measureShort, String measureLong) throws SQLException {
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                int processId = saveMasterValue(connection, "Prozess", processShort, processLong);
+                int hazardId = saveMasterValue(connection, "Gefährdung", hazardShort, hazardLong);
+                int measureId = saveMasterValue(connection, "Maßnahme", measureShort, measureLong);
+                if (processId > 0 && hazardId > 0) {
+                    try (PreparedStatement statement = connection.prepareStatement(
+                            "INSERT INTO master_process_hazard(process_id, hazard_id) VALUES(?, ?) ON CONFLICT(process_id, hazard_id) DO NOTHING")) {
+                        statement.setInt(1, processId);
+                        statement.setInt(2, hazardId);
+                        statement.executeUpdate();
+                    }
+                }
+                if (hazardId > 0 && measureId > 0) {
+                    try (PreparedStatement statement = connection.prepareStatement(
+                            "INSERT INTO master_hazard_measure(hazard_id, measure_id) VALUES(?, ?) ON CONFLICT(hazard_id, measure_id) DO NOTHING")) {
+                        statement.setInt(1, hazardId);
+                        statement.setInt(2, measureId);
+                        statement.executeUpdate();
+                    }
+                }
+                connection.commit();
+            } catch (SQLException ex) {
+                connection.rollback();
+                throw ex;
+            } finally {
+                connection.setAutoCommit(true);
+            }
+        }
+    }
+
+    private int saveMasterValue(Connection connection, String category, String value, String detailText) throws SQLException {
+        if (category == null || category.isBlank() || value == null || value.isBlank()) {
+            return -1;
+        }
+        String normalizedCategory = category.trim();
+        String normalizedValue = value.trim();
+        String detail = detailText == null ? "" : detailText.trim();
+        try (PreparedStatement statement = connection.prepareStatement(
+                "INSERT INTO master_data(category, label, detail_text) VALUES(?, ?, ?) ON CONFLICT(category, label) DO NOTHING")) {
+            statement.setString(1, normalizedCategory);
+            statement.setString(2, normalizedValue);
+            statement.setString(3, detail);
+            statement.executeUpdate();
+        }
+        int id = getMasterDataId(connection, normalizedCategory, normalizedValue);
+        if (id > 0 && !detail.isEmpty()) {
+            try (PreparedStatement statement = connection.prepareStatement(
+                    "UPDATE master_data SET detail_text = ? WHERE id = ?")) {
+                statement.setString(1, detail);
+                statement.setInt(2, id);
+                statement.executeUpdate();
+            }
+        }
+        return id;
+    }
+
+    public void saveTemplate(String name, String xmlContent) throws SQLException {
+        String normalizedName = name == null ? "" : name.trim();
+        if (normalizedName.isEmpty()) {
+            throw new IllegalArgumentException("Der Vorlagenname darf nicht leer sein.");
+        }
+        try (Connection connection = openConnection()) {
+            try (PreparedStatement update = connection.prepareStatement(
+                    "UPDATE templates SET xml_content = ? WHERE name = ?")) {
+                update.setString(1, xmlContent == null ? "" : xmlContent);
+                update.setString(2, normalizedName);
+                if (update.executeUpdate() > 0) {
+                    return;
+                }
+            }
+            try (PreparedStatement insert = connection.prepareStatement(
+                    "INSERT INTO templates(name, xml_content) VALUES(?, ?)")) {
+                insert.setString(1, normalizedName);
+                insert.setString(2, xmlContent == null ? "" : xmlContent);
+                insert.executeUpdate();
+            }
+        }
+    }
+
+    public String loadTemplate(String name) throws SQLException {
+        try (Connection connection = openConnection();
+             PreparedStatement statement = connection.prepareStatement("SELECT xml_content FROM templates WHERE name = ?")) {
+            statement.setString(1, name == null ? "" : name.trim());
+            try (ResultSet resultSet = statement.executeQuery()) {
+                return resultSet.next() ? resultSet.getString("xml_content") : null;
+            }
+        }
+    }
+
+    public List<String> loadTemplateNames() throws SQLException {
+        List<String> names = new ArrayList<>();
+        try (Connection connection = openConnection();
+             PreparedStatement statement = connection.prepareStatement("SELECT name FROM templates ORDER BY name");
+             ResultSet resultSet = statement.executeQuery()) {
+            while (resultSet.next()) {
+                names.add(resultSet.getString("name"));
+            }
+        }
+        names.sort(String.CASE_INSENSITIVE_ORDER);
+        return names;
+    }
+
+    public boolean templateExists(String name) throws SQLException {
+        try (Connection connection = openConnection();
+             PreparedStatement statement = connection.prepareStatement("SELECT 1 FROM templates WHERE name = ?")) {
+            statement.setString(1, name == null ? "" : name.trim());
+            try (ResultSet resultSet = statement.executeQuery()) {
+                return resultSet.next();
             }
         }
     }
